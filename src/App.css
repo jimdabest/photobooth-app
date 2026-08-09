@@ -1,38 +1,130 @@
-.App {
-  text-align: center;
+/* RESET CƠ BẢN */
+body {
+  margin: 0;
+  overflow: hidden; /* Cấm tuyệt đối việc cuộn trang trên máy Kiosk */
+  font-family: sans-serif;
 }
 
-.App-logo {
-  height: 40vmin;
-  pointer-events: none;
-}
-
-@media (prefers-reduced-motion: no-preference) {
-  .App-logo {
-    animation: App-logo-spin infinite 20s linear;
-  }
-}
-
-.App-header {
-  background-color: #282c34;
-  min-height: 100vh;
+.kiosk-container {
+  width: 100vw;
+  height: 100vh;
   display: flex;
   flex-direction: column;
-  align-items: center;
   justify-content: center;
-  font-size: calc(10px + 2vmin);
+  align-items: center;
+  background-color: #f0f2f5;
+  box-sizing: border-box;
+  padding: 2vh;
+}
+
+/* KHU VỰC TIÊU ĐỀ */
+.text-instruction {
+  text-align: center;
+  margin-bottom: 3vh;
+}
+
+.text-instruction h1 {
+  font-size: 6vh; /* Tự động to nhỏ theo chiều cao màn hình */
+  margin: 0 0 1vh 0;
+  color: #333;
+}
+
+.text-instruction p {
+  font-size: 3vh;
+  margin: 0;
+  color: #666;
+}
+
+/* CỤM CAMERA & KHUNG ẢNH */
+.photobooth-area {
+  position: relative;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  
+  /* Lấy chiều cao màn hình làm chuẩn để co giãn */
+  height: 65vh; 
+  /* Ép khung ảnh luôn giữ đúng tỉ lệ 2:3 (tỉ lệ giấy in) dù ở màn hình nào */
+  aspect-ratio: 2 / 3; 
+}
+
+/* LỚP 1: CỬA SỔ CAMERA */
+.live-view-mask {
+  position: absolute;
+  /* Kích thước video ăn theo % của thẻ mẹ .photobooth-area */
+  width: 85%;
+  height: 75%;
+  top: 5%; /* Đẩy xuống một chút để hở viền trắng bên trên */
+  overflow: hidden;
+  border-radius: 2vh;
+  z-index: 1;
+}
+
+.live-view-mask video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transform: scaleX(-1);
+}
+
+/* LỚP 2: KHUNG ẢNH TRẮNG ĐỤC LỖ */
+.template-overlay {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  /* Viền trắng tự động co giãn */
+  border: 4vh solid white;
+  border-bottom: 15vh solid white;
+  border-radius: 3vh;
+  box-sizing: border-box;
+  pointer-events: none;
+  z-index: 10;
+}
+
+/* NÚT BẤM */
+.start-btn {
+  margin-top: 4vh;
+  padding: 2.5vh 5vw;
+  font-size: 3.5vh;
+  font-weight: bold;
+  background-color: #ff4757;
   color: white;
+  border: none;
+  border-radius: 5vh;
+  cursor: pointer;
+  box-shadow: 0 1vh 2vh rgba(255, 71, 87, 0.3);
+  transition: all 0.2s;
+  z-index: 20;
 }
 
-.App-link {
-  color: #61dafb;
+.start-btn:active {
+  transform: scale(0.95);
 }
 
-@keyframes App-logo-spin {
-  from {
-    transform: rotate(0deg);
-  }
-  to {
-    transform: rotate(360deg);
-  }
+/* ĐẾM NGƯỢC */
+.countdown-overlay {
+  position: absolute;
+  top: 0; left: 0; right: 0; bottom: 0;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  font-size: 25vh; /* Chữ to bằng 1/4 màn hình */
+  font-weight: 900;
+  color: white;
+  text-shadow: 0 0 3vh rgba(0,0,0,0.8);
+  z-index: 5;
+}
+
+/* FLASH TRẮNG */
+.flash-overlay {
+  position: fixed;
+  top: 0; left: 0; width: 100vw; height: 100vh;
+  background-color: white;
+  z-index: 9999;
+  animation: flashAnim 0.5s ease-out forwards;
+}
+
+@keyframes flashAnim {
+  0% { opacity: 1; }
+  100% { opacity: 0; }
 }

@@ -1,23 +1,21 @@
-# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+# Node.js & React
+node_modules/
+build/
+dist/
+.env
 
-# dependencies
-/node_modules
-/.pnp
-.pnp.js
+# Python
+__pycache__/
+*.pyc
+*.pyo
+venv/
+env/
+.venv/
 
-# testing
-/coverage
+# Thư mục dữ liệu Photobooth (Không đưa ảnh của khách lên mạng)
+backend/photobooth_data/
+backend/photobooth_prints_all/
 
-# production
-/build
-
-# misc
+# Hệ điều hành
 .DS_Store
-.env.local
-.env.development.local
-.env.test.local
-.env.production.local
-
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
+Thumbs.db
