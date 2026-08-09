@@ -1,68 +1,106 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import '../App.css';
 
 function TemplateSelect() {
   const navigate = useNavigate();
+  
+  // Biến lưu danh sách khung từ Backend
+  const [templates, setTemplates] = useState([]);
+  const [selectedTemplate, setSelectedTemplate] = useState(null);
+  const [isLoading, setIsLoading] = useState(true);
 
-  // Danh sách các khung (Sau này bạn chỉ cần đổi 'color' thành 'image: url_anh_png')
-  const templates = [
-    { id: 'template_1', name: 'Mẫu 1', color: '#ffb8b8' }, // Hồng nhẹ
-    { id: 'template_2', name: 'Mẫu 2', color: '#b8e9ff' }, // Xanh nhạt
-    { id: 'template_3', name: 'Mẫu 3', color: '#fff3b8' }  // Vàng nhạt
-  ];
+  // Gọi API lấy danh sách khung khi mở trang
+  useEffect(() => {
+    fetch('http://127.0.0.1:8000/api/templates')
+      .then(res => res.json())
+      .then(data => {
+        setTemplates(data);
+        // Tự động chọn khung đầu tiên làm mặc định nếu có data
+        if (data.length > 0) {
+          setSelectedTemplate(data[0].id);
+        }
+        setIsLoading(false);
+      })
+      .catch(err => {
+        console.error("Lỗi lấy danh sách khung:", err);
+        setIsLoading(false);
+      });
+  }, []);
 
-  const handleSelectTemplate = (templateId) => {
-    // Chuyển sang trang chụp (sau này sẽ truyền cả templateId đi theo)
-    navigate('/capture');
+  const handleNext = () => {
+    // Tìm khung ảnh khách vừa chọn trong danh sách
+    const selectedTpl = templates.find(t => t.id === selectedTemplate);
+    // Chuyển sang trang chụp và truyền theo ID của khung đã chọn
+    navigate('/capture', { state: { templateId: selectedTemplate, template: selectedTpl } });
   };
 
   return (
     <div className="kiosk-container">
-      <div className="text-instruction" style={{ marginTop: '50px' }}>
-        <h1>CHỌN MẪU KHUNG</h1>
-        <p>Chạm vào một mẫu bên dưới để bắt đầu chụp</p>
+      <h1 style={{ fontSize: '4vh', marginBottom: '2vh' }}>CHỌN KHUNG ẢNH CỦA BẠN</h1>
+      <p style={{ fontSize: '2vh', marginBottom: '5vh' }}>Chạm vào mẫu bạn thích nhất</p>
+
+      {isLoading ? (
+        <p style={{ fontSize: '3vh' }}>Đang tải danh sách khung...</p>
+      ) : (
+        <div style={{ display: 'flex', gap: '3vw', flexWrap: 'wrap', justifyContent: 'center' }}>
+          {templates.map(tpl => (
+            <div 
+              key={tpl.id}
+              onClick={() => setSelectedTemplate(tpl.id)}
+              style={{
+                width: '20vw',
+                height: '30vw',
+                // Ưu tiên hiển thị ảnh thật, nếu chưa upload ảnh thì dùng màu nền
+                backgroundColor: tpl.image_url ? 'transparent' : (tpl.color || '#fff'),
+                backgroundImage: tpl.image_url ? `url(${tpl.image_url})` : 'none',
+                backgroundSize: 'contain',
+                backgroundRepeat: 'no-repeat',
+                backgroundPosition: 'center',
+                // Đổi viền thành màu xanh lá khi được chọn
+                border: selectedTemplate === tpl.id ? '6px solid #4CAF50' : '6px solid transparent',
+                borderRadius: '2vh',
+                boxShadow: '0 1vh 2vh rgba(0,0,0,0.3)',
+                cursor: 'pointer',
+                transition: 'transform 0.2s',
+                transform: selectedTemplate === tpl.id ? 'scale(1.05)' : 'scale(1)',
+                display: 'flex',
+                alignItems: 'flex-end',
+                justifyContent: 'center',
+                paddingBottom: '2vh',
+                position: 'relative'
+              }}
+            >
+              {/* Nếu khung chưa có ảnh thật, hiển thị tên của khung lên màn hình */}
+              {!tpl.image_url && <h2 style={{ color: '#333' }}>{tpl.name}</h2>}
+              
+              {/* Hiển thị dấu check xanh nhỏ góc trên nếu được chọn */}
+              {selectedTemplate === tpl.id && (
+                <div style={{
+                  position: 'absolute', top: '1vh', right: '1vh',
+                  backgroundColor: '#4CAF50', color: 'white',
+                  width: '4vh', height: '4vh', borderRadius: '50%',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  fontWeight: 'bold', fontSize: '2vh'
+                }}>✓</div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div style={{ marginTop: '8vh', display: 'flex', gap: '2vw' }}>
+        <button className="start-btn" onClick={() => navigate('/')} style={{ backgroundColor: '#555' }}>
+          QUAY LẠI
+        </button>
+        <button 
+          className="start-btn" 
+          onClick={handleNext}
+          disabled={!selectedTemplate} // Khóa nút nếu chưa chọn khung nào
+        >
+          TIẾP TỤC
+        </button>
       </div>
-      
-      {/* Khu vực hiển thị danh sách khung */}
-      <div style={{ 
-        display: 'flex', 
-        gap: '3vw', /* Khoảng cách giãn theo bề ngang màn hình */
-        marginTop: '5vh', 
-        justifyContent: 'center',
-        flexWrap: 'wrap' /* Tự động rớt dòng nếu màn hình quá hẹp */
-      }}>
-        {templates.map((tpl) => (
-          <div 
-            key={tpl.id}
-            onClick={() => handleSelectTemplate(tpl.id)}
-            style={{ 
-              height: '45vh', /* Chiều cao cố định theo tỉ lệ màn hình */
-              aspectRatio: '2/3', /* Tự động tính ra bề ngang, luôn giữ dáng dọc */
-              backgroundColor: tpl.color, 
-              borderRadius: '2vh', 
-              cursor: 'pointer', 
-              display: 'flex', 
-              alignItems: 'center', 
-              justifyContent: 'center', 
-              color: '#333', 
-              fontSize: '3vh', 
-              fontWeight: 'bold',
-              boxShadow: '0 1vh 2vh rgba(0,0,0,0.2)',
-              transition: 'transform 0.2s'
-            }}
-            onMouseDown={(e) => e.currentTarget.style.transform = 'scale(0.95)'}
-            onMouseUp={(e) => e.currentTarget.style.transform = 'scale(1)'}
-            onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1)'}
-          >
-            {tpl.name}
-          </div>
-        ))}
-      </div>
-      
-      <button className="start-btn" onClick={() => navigate('/')} style={{ marginTop: '60px', backgroundColor: '#555' }}>
-        QUAY LẠI
-      </button>
     </div>
   );
 }

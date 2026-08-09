@@ -24,6 +24,7 @@ async def websocket_endpoint(websocket: WebSocket):
             
             if data.get("action") == "capture":
                 pose_number = data.get("pose", 1)
+                template_id = data.get("template_id", "tpl_default")
                 await asyncio.sleep(1) # Giả lập delay
                 
                 cloud_file_path = generate_simulated_raw_photo(cloud_sim_dir, pose_number)
@@ -31,8 +32,7 @@ async def websocket_endpoint(websocket: WebSocket):
                 
                 if pose_number == 3:
                     # Truyền session_id và print_export_dir vào hàm ghép ảnh
-                    process_and_save_strip(session_id, session_raw_photos, print_export_dir, cloud_sim_dir)
-                    
+                    process_and_save_strip(session_id, session_raw_photos, print_export_dir, cloud_sim_dir, template_id)                    
                     # URL gửi lên màn hình Review (vẫn trỏ về thư mục cloud nội bộ để tải file)
                     final_image_url = f"http://127.0.0.1:8000/data/{session_id}/cloud_simulated/final_photobooth_strip.jpg"
 

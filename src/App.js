@@ -3,7 +3,8 @@ import { HashRouter as Router, Routes, Route } from 'react-router-dom';
 import Home from './pages/Home';
 import TemplateSelect from './pages/TemplateSelect';
 import Capture from './pages/Capture';
-import Review from './pages/Review'; // Import thêm trang mới
+import Review from './pages/Review';
+import Admin from './pages/Admin'; // <--- Import trang Admin
 import './App.css';
 
 function App() {
@@ -13,7 +14,10 @@ function App() {
         <Route path="/" element={<Home />} />
         <Route path="/templates" element={<TemplateSelect />} />
         <Route path="/capture" element={<Capture />} />
-        <Route path="/review" element={<Review />} /> {/* Thêm Route này */}
+        <Route path="/review" element={<Review />} />
+        
+        {/* Tuyến đường ẩn dành cho Admin */}
+        <Route path="/admin" element={<Admin />} /> 
       </Routes>
     </Router>
   );

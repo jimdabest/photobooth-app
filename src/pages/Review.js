@@ -8,11 +8,30 @@ function Review() {
   const navigate = useNavigate();
   const imageUrl = location.state?.imageUrl; 
   
-  // Thêm biến trạng thái để lưu thời gian đếm ngược (30 giây)
+  // Mặc định cho số giây lớn một chút (ví dụ 30) trong lúc chờ API trả về
   const [timeLeft, setTimeLeft] = useState(30);
+  // Thêm biến để biết khi nào API đã tải xong
+  const [isSettingLoaded, setIsSettingLoaded] = useState(false);
 
+  // 1. GỌI API LẤY CÀI ĐẶT TỪ BACKEND
   useEffect(() => {
-    // Thiết lập bộ đếm lùi mỗi 1 giây (1000ms)
+    fetch('http://127.0.0.1:8000/api/settings')
+      .then(res => res.json())
+      .then(data => {
+        // Cập nhật số giây chờ theo cài đặt của Admin
+        setTimeLeft(data.review_timeout);
+        setIsSettingLoaded(true); // Đánh dấu là đã lấy xong cài đặt
+      })
+      .catch(err => {
+        console.error("Lỗi lấy cài đặt từ Admin:", err);
+        setIsSettingLoaded(true); // Vẫn cho chạy tiếp nếu API lỗi
+      });
+  }, []);
+
+  // 2. CHẠY BỘ ĐẾM NGƯỢC (Chỉ chạy khi đã lấy xong cài đặt)
+  useEffect(() => {
+    if (!isSettingLoaded) return; // Chưa tải xong cấu hình thì chưa đếm
+
     const timer = setInterval(() => {
       setTimeLeft((prevTime) => {
         if (prevTime <= 1) {
@@ -24,9 +43,8 @@ function Review() {
       });
     }, 1000);
 
-    // Dọn dẹp bộ đếm khi component bị hủy (khách tự bấm nút Hoàn tất sớm)
     return () => clearInterval(timer);
-  }, [navigate]);
+  }, [navigate, isSettingLoaded]);
 
   return (
     <div className="kiosk-container" style={{ flexDirection: 'row', gap: '5vw' }}>
@@ -55,7 +73,6 @@ function Review() {
           <QRCodeCanvas value={imageUrl || "https://google.com"} size={250} />
         </div>
 
-        {/* Nút bấm hiển thị kèm số đếm ngược động */}
         <button className="start-btn" onClick={() => navigate('/')} style={{ marginTop: '8vh', backgroundColor: '#555' }}>
           HOÀN TẤT ({timeLeft}s)
         </button>
