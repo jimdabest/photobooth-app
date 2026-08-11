@@ -1,8 +1,11 @@
 import os
 import json
 import shutil
+import time
 from fastapi import APIRouter, UploadFile, File, Form
+from fastapi.responses import StreamingResponse
 from app.config import BASE_SAVE_DIR
+from app.services.image_service import canon_cam
 
 router = APIRouter(prefix="/api")
 
@@ -70,3 +73,19 @@ async def upload_template(name: str = Form(...), file: UploadFile = File(...)):
         json.dump(templates, f, ensure_ascii=False, indent=4)
         
     return {"status": "success", "template": new_template}
+
+# 5. API Live View truyền luồng Video
+@router.get("/liveview")
+def video_stream():
+    canon_cam.start_live_view_thread()
+    
+    def generate_frames():
+        while True:
+            frame = canon_cam.latest_frame
+            if frame:
+                yield (b'--frame\r\n'
+                       b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
+            
+            time.sleep(0.04)
+            
+    return StreamingResponse(generate_frames(), media_type="multipart/x-mixed-replace; boundary=frame")

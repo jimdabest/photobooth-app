@@ -4,16 +4,16 @@ import '../App.css';
 
 function Capture() {
   const navigate = useNavigate();
-  const location = useLocation(); 
+  const location = useLocation();
   const videoRef = useRef(null);
   const ws = useRef(null);
-  
-  const [step, setStep] = useState('CONNECTING'); 
+
+  const [step, setStep] = useState('CONNECTING');
   const [poseIndex, setPoseIndex] = useState(1);
   const [count, setCount] = useState(3);
   const [isFlashing, setIsFlashing] = useState(false);
-  
-  const [countdownTime, setCountdownTime] = useState(null); 
+
+  const [countdownTime, setCountdownTime] = useState(null);
 
   // Lấy ID và Link ảnh khung từ trang trước truyền sang
   const templateId = location.state?.templateId || 'tpl_default';
@@ -35,9 +35,9 @@ function Capture() {
       .catch(err => console.error("Lỗi Camera: ", err));
 
     ws.current = new WebSocket('ws://127.0.0.1:8000/ws');
-    
+
     ws.current.onopen = () => {
-      runCountdown(1, countdownTime); 
+      runCountdown(1, countdownTime);
     };
 
     ws.current.onmessage = (event) => {
@@ -48,7 +48,7 @@ function Capture() {
         } else {
           setTimeout(() => {
             setPoseIndex(response.pose + 1);
-            runCountdown(response.pose + 1, countdownTime); 
+            runCountdown(response.pose + 1, countdownTime);
           }, 1000);
         }
       }
@@ -56,19 +56,19 @@ function Capture() {
 
     return () => { if (ws.current) ws.current.close(); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [navigate, countdownTime]); 
+  }, [navigate, countdownTime]);
 
   const runCountdown = (currentPose, timeConfig) => {
     setStep('COUNTING');
-    setCount(timeConfig); 
+    setCount(timeConfig);
     let c = timeConfig;
     const timer = setInterval(() => {
       c -= 1;
       if (c > 0) {
-        setCount(c); 
+        setCount(c);
       } else {
         clearInterval(timer);
-        triggerFlashAndCapture(currentPose); 
+        triggerFlashAndCapture(currentPose);
       }
     }, 1000);
   };
@@ -77,10 +77,10 @@ function Capture() {
     setIsFlashing(true);
     setStep('CAPTURING');
     if (ws.current && ws.current.readyState === WebSocket.OPEN) {
-      ws.current.send(JSON.stringify({ 
-        action: "capture", 
+      ws.current.send(JSON.stringify({
+        action: "capture",
         pose: currentPose,
-        template_id: templateId 
+        template_id: templateId
       }));
     }
     setTimeout(() => setIsFlashing(false), 500);
@@ -89,7 +89,7 @@ function Capture() {
   return (
     <div className="kiosk-container">
       {isFlashing && <div className="flash-overlay"></div>}
-      
+
       <div className="text-instruction" style={{ zIndex: 10 }}>
         <h1>
           {step === 'CONNECTING' ? "ĐANG LẤY CẤU HÌNH..." : `ĐANG CHỤP: KIỂU ${poseIndex} / 3`}
@@ -99,16 +99,19 @@ function Capture() {
 
       {/* KHU VỰC LIVE VIEW CÓ KHUNG ĐÈ LÊN */}
       <div className="photobooth-area" style={{ position: 'relative', overflow: 'hidden' }}>
-        
+
         {/* LỚP DƯỚI CÙNG: Camera thực tế */}
-        <video 
-          ref={videoRef} 
-          autoPlay 
-          playsInline 
-          muted 
-          style={{ width: '100%', height: '100%', objectFit: 'cover', transform: 'scaleX(-1)' }} // transform để lật gương camera giống soi gương
-        ></video>
-        
+        <img
+          src="http://127.0.0.1:8000/api/liveview"
+          alt="Canon Live View"
+          style={{
+            width: "100%",
+            height: "100%",
+            objectFit: "cover",
+            transform: "scaleX(-1)"
+          }}
+        />
+
         {/* LỚP GIỮA: Số đếm ngược */}
         {step === 'COUNTING' && !isFlashing && (
           <div className="countdown-overlay" style={{ zIndex: 5 }}>{count}</div>
@@ -116,7 +119,7 @@ function Capture() {
 
         {/* LỚP TRÊN CÙNG: Khung ảnh PNG đục lỗ */}
         {templateUrl && (
-          <div 
+          <div
             style={{
               position: 'absolute',
               top: 0, left: 0, width: '100%', height: '100%',

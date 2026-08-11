@@ -19,3 +19,7 @@ backend/photobooth_prints_all/
 # Hệ điều hành
 .DS_Store
 Thumbs.db
+
+# Bỏ qua các file thư viện DLL của Canon SDK
+*.dll
+EDSDK/

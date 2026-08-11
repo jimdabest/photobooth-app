@@ -28,10 +28,12 @@ Hệ thống phần mềm Photobooth thương mại hiện đại, được xây
 ```text
 photobooth-app/
 ├── backend/               # FastAPI Backend (Xử lý API, WebSocket, Ghép ảnh Pillow)
-│   ├── app/               # Mã nguồn chính của Backend
-│   ├── photobooth_data/   # Thư mục lưu trữ cấu hình, khung ảnh và phiên chụp
-│   ├── requirements.txt   # Danh sách thư viện Python
-│   └── run.py             # File khởi động Server Python
+│   ├── app/                  # Mã nguồn chính Backend (API, WebSocket, Image Processing)
+│   ├── EDSDK.dll             # Thư viện lõi điều khiển máy ảnh Canon (Yêu cầu copy vào)
+│   ├── EdsImage.dll          # Thư viện xử lý hình ảnh Canon đi kèm
+│   ├── photobooth_data/      # Thư mục lưu trữ cấu hình, khung ảnh và phiên chụp
+│   ├── requirements.txt      # Danh sách thư viện Python
+│   └── run.py
 └── src/                   # React Frontend (Giao diện Kiosk & Admin)
     ├── pages/             # Các màn hình (Home, TemplateSelect, Capture, Review, Admin)
     ├── App.js             # Bộ điều hướng (Router)
@@ -43,8 +45,10 @@ photobooth-app/
 ## ⚙️ Hướng dẫn cài đặt và chạy dự án
 
 ### Yêu cầu hệ thống trước khi bắt đầu:
+* Hệ điều hành: Windows 10/11 (64-bit) để tương thích với Canon EDSDK.
 * [Node.js](https://nodejs.org/) (Phiên bản LTS khuyến nghị)
 * [Python](https://www.python.org/) (Phiên bản 3.10 trở lên)
+* Phần cứng: Máy ảnh Canon DSLR (hỗ trợ EDSDK) + Cáp kết nối USB.
 
 ---
 
@@ -58,7 +62,14 @@ cd photobooth-app
 
 ---
 
-### Bước 2: Cài đặt và Khởi động Backend (Python)
+### Bước 2: Cài đặt Thư viện Canon SDK (EDSDK)
+1. Tải bộ Canon EDSDK chính thức từ Canon Developer Programme.
+
+2. Giải nén thư mục SDK, truy cập theo đường dẫn: `Windows` -> `x64` -> `Dll.`
+
+3. Copy toàn bộ các file `.dll` (bao gồm `EDSDK.dll`, `EdsImage.dll`...) dán trực tiếp vào thư mục `backend/`.
+
+### Bước 3: Cài đặt và Khởi động Backend (Python)
 
 1. Di chuyển vào thư mục backend:
    ```bash
