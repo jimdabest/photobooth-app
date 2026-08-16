@@ -50,8 +50,21 @@ async def websocket_session_endpoint(websocket: WebSocket):
                 session_raw_photos.clear()
                 
                 # 3. Vòng lặp chụp ĐỘNG theo num_poses
+                session_failed = False # Cờ đánh dấu phiên chụp có lỗi không
+
                 for pose in range(1, num_poses + 1):
-                    # Báo về cho React biết tổng số ảnh và ảnh hiện tại để đếm ngược
+                    # --- KIỂM TRA PHẦN CỨNG TRƯỚC KHI ĐẾM NGƯỢC ---
+                    from app.services.image_service import canon_cam
+                    if canon_cam.camera is None:
+                        # Báo lỗi khẩn cấp lên màn hình React
+                        await websocket.send_json({
+                            "event": "CRITICAL_ERROR",
+                            "message": "Mất kết nối máy ảnh. Vui lòng kiểm tra cáp USB hoặc pin!"
+                        })
+                        session_failed = True
+                        break # Dừng phiên chụp ngay lập tức, không đếm ngược nữa
+
+                    # Báo về cho React biết bắt đầu đếm ngược
                     await websocket.send_json({
                         "event": "START_COUNTDOWN",
                         "current_pose": pose,
@@ -63,23 +76,21 @@ async def websocket_session_endpoint(websocket: WebSocket):
                     os.makedirs(session_dir, exist_ok=True)
                     
                     # ========================================================
-                    # ĐỒNG BỘ THỜI GIAN: TÁCH NHỊP ĐẾM NGƯỢC VÀ BẤM NỬA CÒ
+                    # ĐỒNG BỘ THỜI GIAN: ĐẾM 3.. 2.. 1.. -> SMILE! (MỚI TẮT LIVEVIEW)
                     # ========================================================
-                    if countdown >= 1:
-                        # Chờ đến khi còn đúng 1 giây cuối cùng
-                        await asyncio.sleep(countdown - 1)
-                        
-                        # Ra lệnh BẤM NỬA CÒ (Máy ảnh tắt LiveView và xoay lấy nét)
-                        print(f"[{pose}/{num_poses}] Đang lấy nét (còn 1 giây)...")
-                        await asyncio.to_thread(pre_focus_camera)
-                        
-                        # Chờ nốt 1 giây còn lại để thấu kính khóa nét xong
-                        await asyncio.sleep(1)
-                    else:
-                        # Trường hợp setting countdown = 0 (chụp tức thì)
-                        await asyncio.to_thread(pre_focus_camera)
-                        await asyncio.sleep(0.5)
-                        
+                    if countdown > 0:
+                        # 1. Chờ chạy hết toàn bộ thời gian đếm ngược (UI sẽ đếm 3, 2, 1)
+                        # Lúc này Live View vẫn chạy mượt mà không bị ngắt
+                        await asyncio.sleep(countdown)
+                    
+                    # 2. Ngay tại giây số 0 (UI vừa hiện chữ "Smile!"), ta mới bắt đầu Tắt Live View & Bấm nửa cò
+                    print(f"[{pose}/{num_poses}] Đang lấy nét (Smile!)...")
+                    await asyncio.to_thread(pre_focus_camera)
+                    
+                    # 3. Đứng chờ 0.8 giây để thấu kính xoay nét xong. 
+                    # KHOẢNG THỜI GIAN NÀY màn hình UI vẫn đang hiện chữ "Smile!" và ảnh Live View bị đứng lại, tạo thành một khoảnh khắc "chốt dáng" cực kỳ tự nhiên.
+                    await asyncio.sleep(0.8) 
+
                     # ========================================================
                     # ĐỒNG BỘ: KÍCH HOẠT FLASH UI + BẤM LÚT CÒ CHỤP
                     # ========================================================
@@ -93,28 +104,29 @@ async def websocket_session_endpoint(websocket: WebSocket):
                     session_raw_photos.append(photo_path)
                     
                     # Nghỉ 1 giây để khách đổi dáng cho kiểu tiếp theo
-                    await asyncio.sleep(1) 
+                    await asyncio.sleep(1)
 
                 # 4. Chụp xong -> Ghép ảnh theo Template
-                await websocket.send_json({"event": "PROCESSING"})
+                if not session_failed:
+                    await websocket.send_json({"event": "PROCESSING"})
                 
-                print_dir = os.path.join(BASE_SAVE_DIR, "prints")
-                os.makedirs(print_dir, exist_ok=True)
+                    print_dir = os.path.join(BASE_SAVE_DIR, "prints")
+                    os.makedirs(print_dir, exist_ok=True)
                 
-                final_strip_path = await asyncio.to_thread(
-                    process_and_save_strip,
-                    session_id,
-                    session_raw_photos,
-                    print_dir,
-                    session_dir,
-                    template_id
-                )
-                
-                # Báo hoàn tất để chuyển sang màn hình QR / Review
-                await websocket.send_json({
-                    "event": "COMPLETED",
-                    "final_image_url": f"http://127.0.0.1:8000/data/sessions/{session_id}/final_photobooth_strip.jpg"
-                })
+                    final_strip_path = await asyncio.to_thread(
+                        process_and_save_strip,
+                        session_id,
+                        session_raw_photos,
+                        print_dir,
+                        session_dir,
+                        template_id
+                    )
+                    
+                    # Báo hoàn tất để chuyển sang màn hình QR / Review
+                    await websocket.send_json({
+                        "event": "COMPLETED",
+                        "final_image_url": f"http://127.0.0.1:8000/data/sessions/{session_id}/final_photobooth_strip.jpg"
+                    })
                 
     except WebSocketDisconnect:
         print("❌ Kiosk đã ngắt kết nối WebSocket.")

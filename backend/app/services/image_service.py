@@ -66,29 +66,63 @@ class CanonCamera:
             self.worker_thread = threading.Thread(target=self._camera_worker, daemon=True)
             self.worker_thread.start()
 
-    def _camera_worker(self):
-        ctypes.windll.ole32.CoInitialize(None)
-        edsdk.EdsInitializeSDK()
+    def _connect_camera(self):
+        """Hàm phụ trợ để tìm và mở kết nối máy ảnh"""
         cam_list = ctypes.c_void_p()
         edsdk.EdsGetCameraList(ctypes.byref(cam_list))
         count = ctypes.c_uint32()
         edsdk.EdsGetChildCount(cam_list, ctypes.byref(count))
-
+        
         if count.value > 0:
             self.camera = ctypes.c_void_p()
             edsdk.EdsGetChildAtIndex(cam_list, 0, ctypes.byref(self.camera))
             edsdk.EdsOpenSession(self.camera)
             save_to = ctypes.c_uint32(2)
             edsdk.EdsSetPropertyData(self.camera, 0x0000000b, 0, 4, ctypes.byref(save_to))
+            
             capacity = EdsCapacity(0x7FFFFFFF, 512, 1)
             edsdk.EdsSetCapacity(self.camera, capacity)
+            
             edsdk.EdsSetObjectEventHandler(self.camera, 0x00000200, self._callback_ref, None)
-            print("==> Đã kết nối EDSDK thành công!")
+            return True
+        return False
+
+    def _camera_worker(self):
+        ctypes.windll.ole32.CoInitialize(None)
+        edsdk.EdsInitializeSDK()
+
+        # Lần đầu khởi động
+        if self._connect_camera():
+            print("==> ✅ Đã kết nối EDSDK thành công!")
+        else:
+            print("==> ⚠️ LỖI: Không tìm thấy máy ảnh lúc khởi động!")
 
         live_view_on = False
 
         while self.is_running:
             try:
+                # ==========================================
+                # CẤP ĐỘ 1: TỰ ĐỘNG RECONNECT KHI MẤT KẾT NỐI
+                # ==========================================
+                if self.camera is None:
+                    self.latest_frame = None
+                    print("🔄 Đang thử kết nối lại với máy ảnh (Auto-Reconnect)...")
+                    edsdk.EdsTerminateSDK()
+                    time.sleep(1.5)
+                    edsdk.EdsInitializeSDK()
+                    
+                    if self._connect_camera():
+                        print("✅ ĐÃ KHÔI PHỤC KẾT NỐI MÁY ẢNH!")
+                        # BẮT BUỘC: Ra lệnh bật lại Live View sau khi có mạng lại
+                        self.action_queue = "START_LIVE_VIEW"
+                        live_view_on = False
+                    else:
+                        time.sleep(2) # Chờ 2s rồi thử tìm lại
+                        continue
+
+                # ==========================================
+                # XỬ LÝ CÁC LỆNH TỪ BÊN NGOÀI
+                # ==========================================
                 if self.action_queue == "START_LIVE_VIEW":
                     if self.camera and not live_view_on:
                         evf_mode = ctypes.c_uint32(1)
@@ -98,32 +132,22 @@ class CanonCamera:
                         live_view_on = True
                     self.action_queue = None
 
-                # ==========================================
-                # HÀNH ĐỘNG 1: PRE-FOCUS (CHUẨN BỊ TẠI GIÂY SỐ 1)
-                # ==========================================
                 elif self.action_queue == "PRE_FOCUS":
                     if self.camera:
-                        print("==> [PRE_FOCUS] Tắt Live View & Khóa nét...")
                         evf_mode_off = ctypes.c_uint32(0)
                         edsdk.EdsSetPropertyData(self.camera, 0x00000501, 0, 4, ctypes.byref(evf_mode_off))
-                        time.sleep(0.15) # Đợi xả cáp
-                        # Bấm nửa cò (Khóa nét ngay lập tức)
-                        edsdk.EdsSendCommand(self.camera, 4, 1)
+                        live_view_on = False # Đánh dấu tạm tắt LV
+                        time.sleep(0.15)
+                        edsdk.EdsSendCommand(self.camera, 4, 1) # Nửa cò
                     self.action_queue = None
 
-                # ==========================================
-                # HÀNH ĐỘNG 2: TRIGGER (BẤM CHỤP TẠI GIÂY SỐ 0)
-                # ==========================================
                 elif self.action_queue == "TRIGGER_SHUTTER":
                     if self.camera:
-                        print("==> [TRIGGER_SHUTTER] Bấm lút cò chụp!")
-                        # Chụp ngay lập tức (Vì nét đã khóa ở nhịp Pre-Focus)
                         err_full = edsdk.EdsSendCommand(self.camera, 4, 3) 
                         time.sleep(0.05)
-                        edsdk.EdsSendCommand(self.camera, 4, 0) # Nhả ngón tay
+                        edsdk.EdsSendCommand(self.camera, 4, 0)
                         
                         if err_full == 0:
-                            print("==> Đang tải ảnh về...")
                             self.is_download_finished = False
                             user32 = ctypes.windll.user32
                             msg = wintypes.MSG()
@@ -135,27 +159,37 @@ class CanonCamera:
                                 time.sleep(0.01)
                             self.capture_success = self.is_download_finished
                         else:
-                            print(f"==> LỖI CÒ: Mã {hex(err_full)}")
+                            print(f"❌ Lỗi nhả cò (Mã lỗi: {hex(err_full)})")
                             self.capture_success = False
                             
-                        # Bật lại Live View
+                        # Chụp xong -> Bật lại Live View
                         evf_mode_on = ctypes.c_uint32(1)
                         edsdk.EdsSetPropertyData(self.camera, 0x00000501, 0, 4, ctypes.byref(evf_mode_on))
                         device = ctypes.c_uint32(2)
                         edsdk.EdsSetPropertyData(self.camera, 0x00000500, 0, 4, ctypes.byref(device))
+                        live_view_on = True
                     else:
-                        self.capture_success = False
+                            print(f"❌ Lỗi nhả cò (Mã lỗi: {hex(err_full)})")
+                            self.capture_success = False
+                            
+                            # --- MỚI: Nếu lỗi ngắt kết nối (0x61, 0x8D07, 0x8D04), cắt đuôi máy ảnh ngay
+                            if err_full in (0x61, 0x8D07, 0x8D04):
+                                self.camera = None
 
                     self.action_queue = None
                     self.action_done_event.set()
 
-                # Stream Live View giữ nguyên
-                if live_view_on and self.action_queue is None:
+                # ==========================================
+                # LẤY FRAME LIVE VIEW LIÊN TỤC VÀ BẮT LỖI RÚT CÁP
+                # ==========================================
+                if live_view_on and self.action_queue is None and self.camera:
                     stream = ctypes.c_void_p()
                     edsdk.EdsCreateMemoryStream(0, ctypes.byref(stream))
                     evf_image = ctypes.c_void_p()
                     edsdk.EdsCreateEvfImageRef(stream, ctypes.byref(evf_image))
+                    
                     err = edsdk.EdsDownloadEvfImage(self.camera, evf_image)
+                    
                     if err == 0:
                         length = ctypes.c_uint64()
                         edsdk.EdsGetLength(stream, ctypes.byref(length))
@@ -163,6 +197,14 @@ class CanonCamera:
                         edsdk.EdsGetPointer(stream, ctypes.byref(pointer))
                         if length.value > 0:
                             self.latest_frame = ctypes.string_at(pointer.value, length.value)
+                            
+                    # --- MỚI: BẮT MỌI LỖI MẤT KẾT NỐI (NGOẠI TRỪ BUSY 0x8D01) ---
+                    elif err != 0x8D01: 
+                        print(f"❌ CẢNH BÁO: Mất luồng Live View hoặc Rút cáp (Mã: {hex(err)})!")
+                        self.camera = None       # Ép biến về None để Auto-Reconnect
+                        self.latest_frame = None # Xóa trắng màn hình giao diện
+                        live_view_on = False
+                        
                     edsdk.EdsRelease(evf_image)
                     edsdk.EdsRelease(stream)
 
@@ -172,7 +214,9 @@ class CanonCamera:
                     user32.TranslateMessage(ctypes.byref(msg))
                     user32.DispatchMessageW(ctypes.byref(msg))
 
-            except Exception: pass
+            except Exception as e:
+                pass
+                
             time.sleep(0.03)
 
         if self.camera: edsdk.EdsCloseSession(self.camera)
