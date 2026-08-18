@@ -7,99 +7,124 @@ function Capture() {
   const location = useLocation();
   const ws = useRef(null);
 
-  // Các Trạng thái giao diện
-  const [step, setStep] = useState('CONNECTING'); // CONNECTING, COUNTING, CAPTURING, PROCESSING
+  // 1. Lấy thông tin template từ trang trước
+  const templateId = location.state?.templateId || 'tpl_default';
+  const template = location.state?.template;
+
+  // 2. Tính toán tỷ lệ Crop Mask cho Liveview
+  // Tỷ lệ gốc của Camera là 16:9
+  const CAMERA_ASPECT_RATIO = 16 / 9;
+  
+  // Lấy kích thước slot đầu tiên để tính tỷ lệ crop in ấn
+  const firstSlot = template?.slots?.[0];
+  const targetRatio = (firstSlot?.width && firstSlot?.height) 
+    ? (firstSlot.width / firstSlot.height) 
+    : CAMERA_ASPECT_RATIO;
+
+  // Tính % chiều rộng vùng in thực tế (Giới hạn tối đa 100%)
+  const safeWidthPercent = Math.min(100, Math.max(20, (targetRatio / CAMERA_ASPECT_RATIO) * 100));
+  // Phần trăm độ rộng của mỗi bên viền mờ
+  const sideMaskPercent = (100 - safeWidthPercent) / 2;
+
+  // 3. Các State điều khiển luồng chụp
+  const [step, setStep] = useState('CONNECTING');
   const [poseIndex, setPoseIndex] = useState(1);
-  const [totalPoses, setTotalPoses] = useState(0);
-  const [count, setCount] = useState(0);
+  const [totalPoses, setTotalPoses] = useState(1);
+  const [count, setCount] = useState(null);
   const [isFlashing, setIsFlashing] = useState(false);
   const liveViewUrl = useRef(`http://127.0.0.1:8000/api/liveview?t=${Date.now()}`);
 
-  // Lấy ID và Link ảnh khung từ màn hình trước
-  const templateId = location.state?.templateId || 'tpl_default';
-  const templateUrl = location.state?.templateUrl || null;
-
   useEffect(() => {
-    // 1. Kết nối tới WebSocket MỚI của Backend
     ws.current = new WebSocket('ws://127.0.0.1:8000/ws/session');
 
     ws.current.onopen = () => {
-      // 2. Ngay khi kết nối, báo Backend bắt đầu phiên chụp với template đã chọn
-      const sessionId = `session_${Date.now()}`;
+      console.log('✅ Đã kết nối WebSocket chụp ảnh!');
       ws.current.send(JSON.stringify({
         action: "START_SESSION",
         template_id: templateId,
-        session_id: sessionId
+        session_id: `session_${Date.now()}`
       }));
     };
 
-    // 3. Lắng nghe các chỉ thị điều phối từ Backend gửi sang
     ws.current.onmessage = (event) => {
-      const data = JSON.parse(event.data);
+      try {
+        const data = JSON.parse(event.data);
 
-      if (data.event === 'START_COUNTDOWN') {
-        // Backend bảo đếm ngược -> Bật UI đếm ngược
-        setPoseIndex(data.current_pose);
-        setTotalPoses(data.total_poses);
-        setCount(data.countdown);
-        setStep('COUNTING');
-      } 
-      else if (data.event === 'TRIGGER_FLASH') {
-        // Backend báo máy ảnh đang chụp -> Chớp nháy màn hình
-        setStep('CAPTURING');
-        setIsFlashing(true);
-        setTimeout(() => setIsFlashing(false), 500);
-      } 
-      else if (data.event === 'PROCESSING') {
-        // Backend báo đã chụp đủ ảnh, đang ghép khung
-        setStep('PROCESSING');
-      } 
-      else if (data.event === 'COMPLETED') {
-        // Backend ghép xong, trả link ảnh hoàn chỉnh -> Chuyển sang trang QR
-        navigate('/review', { state: { imageUrl: data.final_image_url } });
+        if (data.event === 'START_COUNTDOWN') {
+          setPoseIndex(data.current_pose);
+          setTotalPoses(data.total_poses);
+          setCount(data.countdown);
+          setStep('COUNTING');
+        } 
+        else if (data.event === 'TRIGGER_FLASH') {
+          setStep('CAPTURING');
+          setIsFlashing(true);
+          setTimeout(() => setIsFlashing(false), 400);
+        } 
+        else if (data.event === 'PROCESSING') {
+          setStep('PROCESSING');
+        } 
+        else if (data.event === 'COMPLETED') {
+          navigate('/review', { state: { imageUrl: data.final_image_url } });
+        }
+      } catch (err) {
+        console.error("Lỗi parse WS:", err);
       }
     };
 
     return () => {
       if (ws.current) ws.current.close();
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [navigate, templateId]);
 
-  // 4. Hiệu ứng UI: Tự động trừ lùi số đếm ngược trên màn hình
   useEffect(() => {
     let timer;
-    if (step === 'COUNTING' && count > 0) {
+    if (step === 'COUNTING' && count !== null && count > 0) {
       timer = setInterval(() => {
-        setCount((prev) => prev - 1);
+        setCount((prev) => (prev > 0 ? prev - 1 : 0));
       }, 1000);
     }
     return () => clearInterval(timer);
   }, [step, count]);
 
   return (
-    <div className="kiosk-container">
-      {/* Hiệu ứng chớp trắng toàn màn hình khi chụp */}
+    <div className="kiosk-container" style={{ justifyContent: 'center' }}>
+      
+      {/* Flash trắng */}
       {isFlashing && <div className="flash-overlay"></div>}
 
-      {/* Thông báo trạng thái */}
-      <div className="text-instruction" style={{ zIndex: 10 }}>
-        <h1>
-          {step === 'CONNECTING' && "ĐANG KHỞI ĐỘNG MÁY ẢNH..."}
-          {step === 'COUNTING' && `ĐANG CHỤP: KIỂU ${poseIndex} / ${totalPoses || '...'}`}
-          {step === 'CAPTURING' && "GIỮ NGUYÊN..."}
-          {step === 'PROCESSING' && "ĐANG XỬ LÝ VÀ GHÉP ẢNH..."}
+      {/* Tiêu đề hướng dẫn */}
+      <div className="text-instruction" style={{ marginBottom: '2vh' }}>
+        <h1 style={{ fontSize: 'clamp(2rem, 4.5vh, 3.5rem)', color: '#0f172a', fontWeight: '800' }}>
+          {step === 'CONNECTING' && "ĐANG KHỞI ĐỘNG CAMERA..."}
+          {step === 'COUNTING' && `ĐANG CHỤP: KIỂU ${poseIndex} / ${totalPoses}`}
+          {step === 'CAPTURING' && "CƯỜI LÊN NÀO !"}
+          {step === 'PROCESSING' && "ĐANG XỬ LÝ VÀ RỬA ẢNH..."}
         </h1>
-        {step !== 'PROCESSING' && <p>Hãy nhìn vào ống kính và tạo dáng nhé!</p>}
+        {step !== 'PROCESSING' && (
+          <p style={{ fontSize: '1.4rem', color: '#475569', margin: 0 }}>
+            Hãy đứng bên trong khung sáng để ảnh in ra chuẩn đẹp nhất nhé!
+          </p>
+        )}
       </div>
 
-      {/* KHU VỰC LIVE VIEW (SO CẢ KHI CÓ KHUNG ĐÈ LÊN) */}
-      <div className="photobooth-area" style={{ position: 'relative', overflow: 'hidden' }}>
-
-        {/* LỚP DƯỚI CÙNG: Live View thực tế từ Canon */}
+      {/* KHUNG LIVE VIEW NGANG 16:9 */}
+      <div 
+        style={{
+          position: 'relative',
+          height: '62vh',
+          aspectRatio: '16 / 9', /* Chuẩn màn hình ngang 16:9 của máy ảnh */
+          borderRadius: '1.5rem',
+          overflow: 'hidden',
+          backgroundColor: '#000',
+          boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
+          border: '6px solid white'
+        }}
+      >
+        {/* 1. Luồng Camera 16:9 */}
         <img
           src={liveViewUrl.current}
-          alt="Canon Live View"
+          alt="Live View"
           style={{
             width: "100%",
             height: "100%",
@@ -108,39 +133,91 @@ function Capture() {
           }}
         />
 
-        {/* LỚP GIỮA: Số đếm ngược khổng lồ */}
-        {step === 'COUNTING' && count > 0 && !isFlashing && (
-          <div className="countdown-overlay" style={{ zIndex: 5 }}>{count}</div>
+        {/* 2. LỚP MASK LÀM MỜ 2 BÊN RÌA THỪA */}
+        {sideMaskPercent > 0 && (
+          <>
+            {/* Viền mờ bên trái */}
+            <div style={{
+              position: 'absolute',
+              top: 0,
+              bottom: 0,
+              left: 0,
+              width: `${sideMaskPercent}%`,
+              backgroundColor: 'rgba(15, 23, 42, 0.65)', // Làm mờ vùng không in
+              backdropFilter: 'blur(2px)',
+              borderRight: '2px dashed rgba(255, 255, 255, 0.6)', // Vạch nét đứt ranh giới
+              pointerEvents: 'none',
+              zIndex: 5
+            }} />
+
+            {/* Viền mờ bên phải */}
+            <div style={{
+              position: 'absolute',
+              top: 0,
+              bottom: 0,
+              right: 0,
+              width: `${sideMaskPercent}%`,
+              backgroundColor: 'rgba(15, 23, 42, 0.65)',
+              backdropFilter: 'blur(2px)',
+              borderLeft: '2px dashed rgba(255, 255, 255, 0.6)',
+              pointerEvents: 'none',
+              zIndex: 5
+            }} />
+          </>
         )}
 
-        {/* LỚP TRÊN CÙNG: Khung ảnh PNG đục lỗ */}
-        {templateUrl && step !== 'PROCESSING' && (
-          <div
+        {/* 3. Số đếm ngược khổng lồ nằm ở vùng sáng an toàn */}
+        {step === 'COUNTING' && count !== null && !isFlashing && (
+          <div 
             style={{
               position: 'absolute',
-              top: 0, left: 0, width: '100%', height: '100%',
-              backgroundImage: `url(${templateUrl})`,
-              backgroundSize: '100% 100%',
-              backgroundPosition: 'center',
-              backgroundRepeat: 'no-repeat',
-              zIndex: 8,
-              pointerEvents: 'none' // Giúp không cản trở thao tác chạm
+              inset: 0,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontSize: count > 0 ? 'clamp(7rem, 18vh, 12rem)' : 'clamp(4rem, 10vh, 6rem)',
+              fontWeight: '900',
+              color: '#ffffff',
+              textShadow: '0 10px 30px rgba(0,0,0,0.9), 0 0 25px rgba(236, 72, 153, 0.8)',
+              zIndex: 15,
+              pointerEvents: 'none'
             }}
-          ></div>
+          >
+            {count > 0 ? count : "SMILE!"}
+          </div>
         )}
 
-        {/* Màn hình mờ lúc xử lý */}
+        {/* 4. Màn hình chờ rửa ảnh */}
         {step === 'PROCESSING' && (
+          <div 
+            style={{
+              position: 'absolute',
+              inset: 0,
+              backgroundColor: 'rgba(15, 23, 42, 0.92)',
+              backdropFilter: 'blur(8px)',
+              zIndex: 20,
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              color: 'white'
+            }}
+          >
             <div style={{
-                position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', 
-                backgroundColor: 'rgba(0,0,0,0.8)', zIndex: 9, 
-                display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white'
-            }}>
-                <h2>Đang xử lý hình ảnh...</h2>
-            </div>
+              width: '65px',
+              height: '65px',
+              border: '6px solid #334155',
+              borderTop: '6px solid #ec4899',
+              borderRadius: '50%',
+              animation: 'spin 1s linear infinite'
+            }} />
+            <h2 style={{ marginTop: '1.5rem', fontSize: '1.8rem', fontWeight: 'bold' }}>
+              Đang rửa ảnh...
+            </h2>
+          </div>
         )}
-
       </div>
+
     </div>
   );
 }

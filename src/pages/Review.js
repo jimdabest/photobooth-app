@@ -8,35 +8,30 @@ function Review() {
   const navigate = useNavigate();
   const imageUrl = location.state?.imageUrl; 
   
-  // Mặc định cho số giây lớn một chút (ví dụ 30) trong lúc chờ API trả về
   const [timeLeft, setTimeLeft] = useState(30);
-  // Thêm biến để biết khi nào API đã tải xong
   const [isSettingLoaded, setIsSettingLoaded] = useState(false);
 
-  // 1. GỌI API LẤY CÀI ĐẶT TỪ BACKEND
   useEffect(() => {
     fetch('http://127.0.0.1:8000/api/settings')
       .then(res => res.json())
       .then(data => {
-        // Cập nhật số giây chờ theo cài đặt của Admin
-        setTimeLeft(data.review_timeout);
-        setIsSettingLoaded(true); // Đánh dấu là đã lấy xong cài đặt
+        setTimeLeft(data.review_timeout || 30);
+        setIsSettingLoaded(true);
       })
       .catch(err => {
         console.error("Lỗi lấy cài đặt từ Admin:", err);
-        setIsSettingLoaded(true); // Vẫn cho chạy tiếp nếu API lỗi
+        setIsSettingLoaded(true); 
       });
   }, []);
 
-  // 2. CHẠY BỘ ĐẾM NGƯỢC (Chỉ chạy khi đã lấy xong cài đặt)
   useEffect(() => {
-    if (!isSettingLoaded) return; // Chưa tải xong cấu hình thì chưa đếm
+    if (!isSettingLoaded) return; 
 
     const timer = setInterval(() => {
       setTimeLeft((prevTime) => {
         if (prevTime <= 1) {
           clearInterval(timer);
-          navigate('/'); // Chuyển về trang chủ khi hết giờ
+          navigate('/');
           return 0;
         }
         return prevTime - 1;
@@ -47,35 +42,75 @@ function Review() {
   }, [navigate, isSettingLoaded]);
 
   return (
-    <div className="kiosk-container" style={{ flexDirection: 'row', gap: '5vw' }}>
+    <div className="kiosk-container" style={{ padding: '2rem' }}>
+      <h1 style={{ fontSize: 'clamp(2rem, 5vw, 3.5rem)', marginBottom: '1.5rem', color: '#0f172a' }}>
+        ẢNH CỦA BẠN ĐÃ SẴN SÀNG!
+      </h1>
       
-      {/* Cột Trái: Hiển thị ảnh thành phẩm */}
       <div style={{ 
-        height: '80vh', aspectRatio: '2/3', 
-        backgroundColor: 'white', padding: '1vh', 
-        borderRadius: '2vh', boxShadow: '0 1vh 2vh rgba(0,0,0,0.2)' 
+        display: 'flex', 
+        flexDirection: 'row',
+        gap: '4rem', 
+        alignItems: 'center', 
+        justifyContent: 'center',
+        width: '100%',
+        height: '72vh'
       }}>
-        {imageUrl ? (
-          <img src={imageUrl} alt="Thành phẩm" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '1vh' }} />
-        ) : (
-          <p style={{ textAlign: 'center', marginTop: '40vh' }}>Đang xử lý ảnh...</p>
-        )}
-      </div>
-
-      {/* Cột Phải: Lời cảm ơn và Mã QR */}
-      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
-        <h1 style={{ fontSize: '5vh', color: '#333', marginBottom: '2vh' }}>ẢNH CỦA BẠN ĐÃ SẴN SÀNG!</h1>
-        <p style={{ fontSize: '3vh', color: '#666', marginBottom: '5vh', textAlign: 'center' }}>
-          Dùng ứng dụng Camera trên điện thoại<br/>quét mã QR bên dưới để tải ảnh về nhé.
-        </p>
         
-        <div style={{ padding: '2vh', backgroundColor: 'white', borderRadius: '2vh', boxShadow: '0 1vh 2vh rgba(0,0,0,0.1)' }}>
-          <QRCodeCanvas value={imageUrl || "https://google.com"} size={250} />
+        {/* CỘT TRÁI: ẢNH THÀNH PHẨM (Tự động ôm sát theo dáng ảnh thật, không bị kéo mập) */}
+        <div style={{ 
+          height: '100%', 
+          maxHeight: '650px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          backgroundColor: 'white', 
+          padding: '0.8rem', 
+          borderRadius: '1.5rem', 
+          boxShadow: '0 20px 50px rgba(0,0,0,0.15)',
+          transform: 'rotate(-1.5deg)'
+        }}>
+          {imageUrl ? (
+            <img 
+              src={imageUrl} 
+              alt="Thành phẩm" 
+              style={{ 
+                height: '100%', 
+                width: 'auto',
+                maxWidth: '45vw',
+                objectFit: 'contain',
+                borderRadius: '0.8rem',
+                display: 'block'
+              }} 
+            />
+          ) : (
+            <div style={{ padding: '2rem', color: '#64748b', fontSize: '1.5rem' }}>
+              Đang tải ảnh...
+            </div>
+          )}
         </div>
 
-        <button className="start-btn" onClick={() => navigate('/')} style={{ marginTop: '8vh', backgroundColor: '#555' }}>
-          HOÀN TẤT ({timeLeft}s)
-        </button>
+        {/* CỘT PHẢI: KHU VỰC QUÉT MÃ QR */}
+        <div style={{ 
+          display: 'flex', flexDirection: 'column', alignItems: 'center', 
+          backgroundColor: 'rgba(255, 255, 255, 0.7)',
+          backdropFilter: 'blur(20px)',
+          padding: '2.5rem 3rem', borderRadius: '2rem', border: '1px solid rgba(0,0,0,0.05)',
+          boxShadow: '0 10px 30px rgba(0,0,0,0.05)'
+        }}>
+          <p style={{ fontSize: '1.4rem', color: '#334155', marginBottom: '2rem', textAlign: 'center', maxWidth: '320px', fontWeight: '600' }}>
+            Dùng Camera điện thoại quét mã QR để tải ảnh chất lượng cao
+          </p>
+          
+          <div style={{ padding: '1.2rem', backgroundColor: 'white', borderRadius: '1.2rem', boxShadow: '0 10px 25px rgba(0,0,0,0.08)' }}>
+            <QRCodeCanvas value={imageUrl || "https://google.com"} size={200} level={"H"} />
+          </div>
+
+          <button className="btn-primary" onClick={() => navigate('/')} style={{ marginTop: '2.5rem', width: '100%', fontSize: '1.6rem', padding: '1rem 2rem' }}>
+            HOÀN TẤT ({timeLeft}s)
+          </button>
+        </div>
+
       </div>
     </div>
   );
