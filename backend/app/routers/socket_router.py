@@ -2,10 +2,11 @@ import asyncio
 import json
 import os
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
-from app.config import BASE_SAVE_DIR
+from app.config import BASE_SAVE_DIR, PRINT_EXPORT_DIR
 
-# Đã import thêm pre_focus_camera
-from app.services.image_service import capture_raw_photo, process_and_save_strip, pre_focus_camera
+# Import các service
+from app.services.camera_service import capture_raw_photo, pre_focus_camera, canon_cam
+from app.services.image_service import process_and_save_strip
 
 router = APIRouter()
 
@@ -22,7 +23,7 @@ def get_template_by_id(template_id: str):
 @router.websocket("/ws/session")
 async def websocket_session_endpoint(websocket: WebSocket):
     await websocket.accept()
-    print("✅ Màn hình Kiosk đã kết nối WebSocket thành công!")
+    print("Màn hình Kiosk đã kết nối WebSocket thành công!")
     
     session_raw_photos = []
     
@@ -76,7 +77,7 @@ async def websocket_session_endpoint(websocket: WebSocket):
                     os.makedirs(session_dir, exist_ok=True)
                     
                     # ========================================================
-                    # ĐỒNG BỘ THỜI GIAN: ĐẾM 3.. 2.. 1.. -> SMILE! (MỚI TẮT LIVEVIEW)
+                    # ĐỒNG BỘ THỜI GIAN: ĐẾM 3.. 2.. 1.. -> SMILE!
                     # ========================================================
                     if countdown > 0:
                         # 1. Chờ chạy hết toàn bộ thời gian đếm ngược (UI sẽ đếm 3, 2, 1)
@@ -87,19 +88,18 @@ async def websocket_session_endpoint(websocket: WebSocket):
                     print(f"[{pose}/{num_poses}] Đang lấy nét (Smile!)...")
                     await asyncio.to_thread(pre_focus_camera)
                     
-                    # 3. Đứng chờ 0.8 giây để thấu kính xoay nét xong. 
-                    # KHOẢNG THỜI GIAN NÀY màn hình UI vẫn đang hiện chữ "Smile!" và ảnh Live View bị đứng lại, tạo thành một khoảnh khắc "chốt dáng" cực kỳ tự nhiên.
+                    # 3. Đứng chờ 0.8 giây để lấy nét xong. 
                     await asyncio.sleep(0.8) 
 
                     # ========================================================
                     # ĐỒNG BỘ: KÍCH HOẠT FLASH UI + BẤM LÚT CÒ CHỤP
                     # ========================================================
-                    print(f"📸 Đang ra lệnh CHỤP lút cò kiểu số {pose}/{num_poses}...")
+                    print(f"Đang ra lệnh CHỤP lút cò kiểu số {pose}/{num_poses}...")
                     
                     # Báo UI chớp màn hình trắng
                     await websocket.send_json({"event": "TRIGGER_FLASH"})
                     
-                    # Gọi lệnh chụp (Không có độ trễ vì đã nét sẵn)
+                    # Gọi lệnh chụp
                     photo_path = await asyncio.to_thread(capture_raw_photo, session_dir, pose)
                     session_raw_photos.append(photo_path)
                     
@@ -110,14 +110,11 @@ async def websocket_session_endpoint(websocket: WebSocket):
                 if not session_failed:
                     await websocket.send_json({"event": "PROCESSING"})
                 
-                    print_dir = os.path.join(BASE_SAVE_DIR, "prints")
-                    os.makedirs(print_dir, exist_ok=True)
-                
                     final_strip_path = await asyncio.to_thread(
                         process_and_save_strip,
                         session_id,
                         session_raw_photos,
-                        print_dir,
+                        PRINT_EXPORT_DIR,
                         session_dir,
                         template_id
                     )
@@ -129,4 +126,4 @@ async def websocket_session_endpoint(websocket: WebSocket):
                     })
                 
     except WebSocketDisconnect:
-        print("❌ Kiosk đã ngắt kết nối WebSocket.")
+        print("Kiosk đã ngắt kết nối WebSocket.")

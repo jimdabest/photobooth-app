@@ -21,7 +21,7 @@ if not os.path.exists(SETTINGS_FILE):
     with open(SETTINGS_FILE, "w", encoding="utf-8") as f:
         json.dump({"countdown_capture": 3, "review_timeout": 20}, f)
 
-# Khoi tao template mac dinh voi cau truc Moi
+# Khoi tao template
 if not os.path.exists(TEMPLATES_FILE):
     with open(TEMPLATES_FILE, "w", encoding="utf-8") as f:
         json.dump([{
