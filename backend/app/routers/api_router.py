@@ -5,7 +5,7 @@ import time
 from fastapi import APIRouter, UploadFile, File, Form, Request
 from fastapi.responses import StreamingResponse
 from app.config import BASE_SAVE_DIR
-from app.services.image_service import canon_cam
+from app.services.camera_service import canon_cam
 
 router = APIRouter(prefix="/api")
 
