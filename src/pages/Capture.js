@@ -133,6 +133,35 @@ function Capture() {
           }}
         />
 
+        {/* ============================================================== */}
+        {/* TÍNH NĂNG MỚI: LỚP PHỦ HƯỚNG DẪN TẠO DÁNG (POSE GUIDE)          */}
+        {/* ============================================================== */}
+        {template?.guide_config?.enabled && template.slots && template.slots[poseIndex - 1] && (
+            <div style={{
+                position: 'absolute',
+                top: 0, left: 0, width: '100%', height: '100%',
+                overflow: 'hidden',
+                pointerEvents: 'none', // Xuyên qua chuột để không chặn tương tác
+                opacity: template.guide_config.opacity || 0.4,
+                zIndex: 4 // Đặt dưới lớp Mask (5)
+            }}>
+                <img 
+                    src={template.image_url} 
+                    alt="Pose Guide"
+                    style={{
+                        position: 'absolute',
+                        // Phóng to kích thước ảnh nền dựa trên tỷ lệ giữa Canvas tổng và kích thước Ô hiện tại
+                        width: `${(template.canvas_size.width / template.slots[poseIndex - 1].width) * 100}%`,
+                        height: `${(template.canvas_size.height / template.slots[poseIndex - 1].height) * 100}%`,
+                        // Dịch chuyển lùi lại bằng chính tọa độ X, Y của Ô hiện tại
+                        left: `${-(template.slots[poseIndex - 1].x / template.slots[poseIndex - 1].width) * 100}%`,
+                        top: `${-(template.slots[poseIndex - 1].y / template.slots[poseIndex - 1].height) * 100}%`,
+                        transform: 'scaleX(-1)'
+                    }} 
+                />
+            </div>
+        )}
+
         {/* 2. LỚP MASK LÀM MỜ 2 BÊN RÌA THỪA */}
         {sideMaskPercent > 0 && (
           <>

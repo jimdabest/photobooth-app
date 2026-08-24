@@ -4,7 +4,7 @@ import os
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from app.config import BASE_SAVE_DIR, PRINT_EXPORT_DIR
 
-# Import các service
+# Import các service chuẩn xác (đã bao gồm canon_cam ở đây)
 from app.services.camera_service import capture_raw_photo, pre_focus_camera, canon_cam
 from app.services.image_service import process_and_save_strip
 
@@ -23,7 +23,7 @@ def get_template_by_id(template_id: str):
 @router.websocket("/ws/session")
 async def websocket_session_endpoint(websocket: WebSocket):
     await websocket.accept()
-    print("Màn hình Kiosk đã kết nối WebSocket thành công!")
+    print("✅ Màn hình Kiosk đã kết nối WebSocket thành công!")
     
     session_raw_photos = []
     
@@ -55,7 +55,7 @@ async def websocket_session_endpoint(websocket: WebSocket):
 
                 for pose in range(1, num_poses + 1):
                     # --- KIỂM TRA PHẦN CỨNG TRƯỚC KHI ĐẾM NGƯỢC ---
-                    from app.services.image_service import canon_cam
+                    # Không cần import lại, dùng trực tiếp canon_cam đã import ở đầu file
                     if canon_cam.camera is None:
                         # Báo lỗi khẩn cấp lên màn hình React
                         await websocket.send_json({
@@ -94,7 +94,7 @@ async def websocket_session_endpoint(websocket: WebSocket):
                     # ========================================================
                     # ĐỒNG BỘ: KÍCH HOẠT FLASH UI + BẤM LÚT CÒ CHỤP
                     # ========================================================
-                    print(f"Đang ra lệnh CHỤP lút cò kiểu số {pose}/{num_poses}...")
+                    print(f"📸 Đang ra lệnh CHỤP lút cò kiểu số {pose}/{num_poses}...")
                     
                     # Báo UI chớp màn hình trắng
                     await websocket.send_json({"event": "TRIGGER_FLASH"})
@@ -127,3 +127,5 @@ async def websocket_session_endpoint(websocket: WebSocket):
                 
     except WebSocketDisconnect:
         print("Kiosk đã ngắt kết nối WebSocket.")
+    except Exception as e:
+        print(f"Lỗi phiên chụp: {e}")
