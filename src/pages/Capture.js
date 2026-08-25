@@ -38,7 +38,7 @@ function Capture() {
     ws.current = new WebSocket('ws://127.0.0.1:8000/ws/session');
 
     ws.current.onopen = () => {
-      console.log('✅ Đã kết nối WebSocket chụp ảnh!');
+      console.log('Đã kết nối WebSocket chụp ảnh!');
       ws.current.send(JSON.stringify({
         action: "START_SESSION",
         template_id: templateId,
