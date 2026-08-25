@@ -123,6 +123,17 @@ async def update_template(tpl_id: str, request: Request):
         
     return {"status": "success"}
 
+@router.post("/upload-background")
+async def upload_background(file: UploadFile = File(...)):
+    # Lưu đè file ảnh nền vào thư mục data
+    bg_path = os.path.join(BASE_SAVE_DIR, "app_background.jpg")
+    with open(bg_path, "wb") as buffer:
+        shutil.copyfileobj(file.file, buffer)
+    
+    # Trả về URL có gắn timestamp (?t=...) để trình duyệt không bị lưu cache ảnh cũ
+    return {"url": f"http://127.0.0.1:8000/data/app_background.jpg?t={int(time.time())}"}
+
+
 @router.get("/liveview")
 def video_stream():
     canon_cam.start_live_view_thread()

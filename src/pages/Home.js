@@ -5,20 +5,33 @@ import '../App.css';
 function Home() {
   const navigate = useNavigate();
 
+  const handleStart = () => {
+    navigate('/templates');
+  };
+
   return (
-    <div className="kiosk-container">
-      <div style={{ textAlign: 'center', marginBottom: '4rem' }}>
-        <h1 style={{ fontSize: 'clamp(4rem, 8vw, 8rem)', fontWeight: '900', letterSpacing: '2px', color: '#0f172a', textShadow: '0 4px 10px rgba(0,0,0,0.1)' }}>
-          PHOTOBOOTH
-        </h1>
-        <p style={{ fontSize: 'clamp(1.5rem, 3vw, 3rem)', color: '#475569', marginTop: '1rem' }}>
-          Chạm vào màn hình để bắt đầu trải nghiệm
-        </p>
-      </div>
-      
+    <div 
+      className="kiosk-container" 
+      onClick={handleStart}
+      style={{ 
+        cursor: 'pointer', 
+        display: 'flex', 
+        alignItems: 'center', 
+        justifyContent: 'center', 
+        height: '170vh',
+        width: '100vw'
+      }}
+    >
       <button 
         className="btn-primary animate-pulse-btn" 
-        onClick={() => navigate('/templates')}
+        onClick={(e) => {
+          e.stopPropagation(); // Tránh bị xung đột sự kiện click vào nút
+          handleStart();
+        }}
+        style={{
+          fontSize: 'clamp(1.5rem, 3vw, 2.5rem)',
+          padding: '20px 50px'
+        }}
       >
         BẮT ĐẦU NGAY
       </button>

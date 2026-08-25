@@ -1,5 +1,6 @@
 import os
 import io
+import shutil
 import time
 import json
 import asyncio
@@ -331,7 +332,20 @@ async def delete_template(tpl_id: str):
     return {"status": "success"}
 
 # =====================================================================
-# 5. WEBSOCKET ĐIỀU PHỐI ĐẾM NGƯỢC & CHỤP
+# 5. API để nhận và lưu file hình nền Kiosk
+# =====================================================================
+@app.post("/api/upload-background")
+async def upload_background(file: UploadFile = File(...)):
+    # Lưu đè file ảnh nền vào thư mục data
+    bg_path = os.path.join(BASE_SAVE_DIR, "app_background.jpg")
+    with open(bg_path, "wb") as buffer:
+        shutil.copyfileobj(file.file, buffer)
+    
+    # Trả về URL có gắn timestamp (?t=...) để trình duyệt không bị lưu cache ảnh cũ
+    return {"url": f"http://127.0.0.1:8000/data/app_background.jpg?t={int(time.time())}"}
+
+# =====================================================================
+# 6. WEBSOCKET ĐIỀU PHỐI ĐẾM NGƯỢC & CHỤP
 # =====================================================================
 @app.websocket("/ws/session")
 async def ws_session(websocket: WebSocket):
