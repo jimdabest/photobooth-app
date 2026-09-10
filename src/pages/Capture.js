@@ -14,11 +14,11 @@ function Capture() {
   // 2. Tính toán tỷ lệ Crop Mask cho Liveview
   // Tỷ lệ gốc của Camera là 16:9
   const CAMERA_ASPECT_RATIO = 16 / 9;
-  
+
   // Lấy kích thước slot đầu tiên để tính tỷ lệ crop in ấn
   const firstSlot = template?.slots?.[0];
-  const targetRatio = (firstSlot?.width && firstSlot?.height) 
-    ? (firstSlot.width / firstSlot.height) 
+  const targetRatio = (firstSlot?.width && firstSlot?.height)
+    ? (firstSlot.width / firstSlot.height)
     : CAMERA_ASPECT_RATIO;
 
   // Tính % chiều rộng vùng in thực tế (Giới hạn tối đa 100%)
@@ -55,15 +55,15 @@ function Capture() {
           setTotalPoses(data.total_poses);
           setCount(data.countdown);
           setStep('COUNTING');
-        } 
+        }
         else if (data.event === 'TRIGGER_FLASH') {
           setStep('CAPTURING');
           setIsFlashing(true);
           setTimeout(() => setIsFlashing(false), 400);
-        } 
+        }
         else if (data.event === 'PROCESSING') {
           setStep('PROCESSING');
-        } 
+        }
         else if (data.event === 'COMPLETED') {
           navigate('/review', { state: { imageUrl: data.final_image_url } });
         }
@@ -89,27 +89,22 @@ function Capture() {
 
   return (
     <div className="kiosk-container" style={{ justifyContent: 'center' }}>
-      
+
       {/* Flash trắng */}
       {isFlashing && <div className="flash-overlay"></div>}
 
       {/* Tiêu đề hướng dẫn */}
-      <div className="text-instruction" style={{ marginBottom: '2vh' }}>
-        <h1 style={{ fontSize: 'clamp(2rem, 4.5vh, 3.5rem)', color: '#0f172a', fontWeight: '800' }}>
+      <div className="text-instruction" style={{ marginTop: '-2vh', marginBottom: '1vh', textAlign: 'center', width: '100%' }}>
+        <h1 style={{ fontSize: 'clamp(2rem, 4.5vh, 3.5rem)', color: '#0f172a', fontWeight: '800', margin: '0 0 0.5rem 0' }}>
           {step === 'CONNECTING' && "ĐANG KHỞI ĐỘNG CAMERA..."}
           {step === 'COUNTING' && `ĐANG CHỤP: KIỂU ${poseIndex} / ${totalPoses}`}
-          {step === 'CAPTURING' && "CƯỜI LÊN NÀO !"}
+          {step === 'CAPTURING' && "CƯỜI LÊN NÀO!"}
           {step === 'PROCESSING' && "ĐANG XỬ LÝ VÀ RỬA ẢNH..."}
         </h1>
-        {step !== 'PROCESSING' && (
-          <p style={{ fontSize: '1.4rem', color: '#475569', margin: 0 }}>
-            Hãy đứng bên trong khung sáng để ảnh in ra chuẩn đẹp nhất nhé!
-          </p>
-        )}
       </div>
 
       {/* KHUNG LIVE VIEW NGANG 16:9 */}
-      <div 
+      <div
         style={{
           position: 'relative',
           height: '62vh',
@@ -137,29 +132,29 @@ function Capture() {
         {/* TÍNH NĂNG MỚI: LỚP PHỦ HƯỚNG DẪN TẠO DÁNG (POSE GUIDE)          */}
         {/* ============================================================== */}
         {template?.guide_config?.enabled && template.slots && template.slots[poseIndex - 1] && (
-            <div style={{
+          <div style={{
+            position: 'absolute',
+            top: 0, left: 0, width: '100%', height: '100%',
+            overflow: 'hidden',
+            pointerEvents: 'none', // Xuyên qua chuột để không chặn tương tác
+            opacity: template.guide_config.opacity || 0.4,
+            zIndex: 4 // Đặt dưới lớp Mask (5)
+          }}>
+            <img
+              src={template.image_url}
+              alt="Pose Guide"
+              style={{
                 position: 'absolute',
-                top: 0, left: 0, width: '100%', height: '100%',
-                overflow: 'hidden',
-                pointerEvents: 'none', // Xuyên qua chuột để không chặn tương tác
-                opacity: template.guide_config.opacity || 0.4,
-                zIndex: 4 // Đặt dưới lớp Mask (5)
-            }}>
-                <img 
-                    src={template.image_url} 
-                    alt="Pose Guide"
-                    style={{
-                        position: 'absolute',
-                        // Phóng to kích thước ảnh nền dựa trên tỷ lệ giữa Canvas tổng và kích thước Ô hiện tại
-                        width: `${(template.canvas_size.width / template.slots[poseIndex - 1].width) * 100}%`,
-                        height: `${(template.canvas_size.height / template.slots[poseIndex - 1].height) * 100}%`,
-                        // Dịch chuyển lùi lại bằng chính tọa độ X, Y của Ô hiện tại
-                        left: `${-(template.slots[poseIndex - 1].x / template.slots[poseIndex - 1].width) * 100}%`,
-                        top: `${-(template.slots[poseIndex - 1].y / template.slots[poseIndex - 1].height) * 100}%`,
-                        transform: 'scaleX(-1)'
-                    }} 
-                />
-            </div>
+                // Phóng to kích thước ảnh nền dựa trên tỷ lệ giữa Canvas tổng và kích thước Ô hiện tại
+                width: `${(template.canvas_size.width / template.slots[poseIndex - 1].width) * 100}%`,
+                height: `${(template.canvas_size.height / template.slots[poseIndex - 1].height) * 100}%`,
+                // Dịch chuyển lùi lại bằng chính tọa độ X, Y của Ô hiện tại
+                left: `${-(template.slots[poseIndex - 1].x / template.slots[poseIndex - 1].width) * 100}%`,
+                top: `${-(template.slots[poseIndex - 1].y / template.slots[poseIndex - 1].height) * 100}%`,
+                transform: 'scaleX(-1)'
+              }}
+            />
+          </div>
         )}
 
         {/* 2. LỚP MASK LÀM MỜ 2 BÊN RÌA THỪA */}
@@ -197,7 +192,7 @@ function Capture() {
 
         {/* 3. Số đếm ngược khổng lồ nằm ở vùng sáng an toàn */}
         {step === 'COUNTING' && count !== null && !isFlashing && (
-          <div 
+          <div
             style={{
               position: 'absolute',
               inset: 0,
@@ -218,7 +213,7 @@ function Capture() {
 
         {/* 4. Màn hình chờ rửa ảnh */}
         {step === 'PROCESSING' && (
-          <div 
+          <div
             style={{
               position: 'absolute',
               inset: 0,

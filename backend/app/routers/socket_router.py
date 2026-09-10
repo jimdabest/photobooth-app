@@ -23,7 +23,7 @@ def get_template_by_id(template_id: str):
 @router.websocket("/ws/session")
 async def websocket_session_endpoint(websocket: WebSocket):
     await websocket.accept()
-    print("✅ Màn hình Kiosk đã kết nối WebSocket thành công!")
+    print("Màn hình Kiosk đã kết nối WebSocket thành công!")
     
     session_raw_photos = []
     
@@ -76,12 +76,10 @@ async def websocket_session_endpoint(websocket: WebSocket):
                     session_dir = os.path.join(BASE_SAVE_DIR, "sessions", session_id)
                     os.makedirs(session_dir, exist_ok=True)
                     
-                    # ========================================================
                     # ĐỒNG BỘ THỜI GIAN: ĐẾM 3.. 2.. 1.. -> SMILE!
-                    # ========================================================
+
                     if countdown > 0:
                         # 1. Chờ chạy hết toàn bộ thời gian đếm ngược (UI sẽ đếm 3, 2, 1)
-                        # Lúc này Live View vẫn chạy mượt mà không bị ngắt
                         await asyncio.sleep(countdown)
                     
                     # 2. Ngay tại giây số 0 (UI vừa hiện chữ "Smile!"), ta mới bắt đầu Tắt Live View & Bấm nửa cò

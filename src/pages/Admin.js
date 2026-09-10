@@ -220,6 +220,14 @@ const Admin = () => {
         showMessage("Đã xóa hình nền, giao diện quay về mặc định!");
     };
 
+    const handleFileChange = (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        setUploadFile(file);
+        const fileNameWithoutExt = file.name.substring(0, file.name.lastIndexOf('.')) || file.name;
+        setUploadName(fileNameWithoutExt);
+    };
+
     const showMessage = (msg) => {
         setMessage(msg);
         setTimeout(() => setMessage(""), 3000);
@@ -231,14 +239,14 @@ const Admin = () => {
             {message && <div style={{ padding: "10px", backgroundColor: "#d4edda", color: "#155724", marginBottom: "20px", borderRadius: "5px", fontWeight: "bold" }}>{message}</div>}
 
             <div style={{ display: "flex", gap: "30px", alignItems: "flex-start" }}>
-                
+
                 {/* ========== CỘT 1: CHUNG VÀ DANH SÁCH KHUNG (25%) ========== */}
                 <div style={{ flex: "0 0 25%", minWidth: "300px" }}>
-                    
+
                     {/* KHỐI CÀI ĐẶT THỜI GIAN & HÌNH NỀN */}
                     <div style={{ backgroundColor: "#f8f9fa", padding: "15px", borderRadius: "8px", marginBottom: "20px" }}>
                         <h2 style={{ fontSize: "18px", marginBottom: "15px" }}>Cài đặt chung</h2>
-                        
+
                         <div style={{ backgroundColor: "#e2e8f0", padding: "15px", borderRadius: "8px", marginBottom: "15px", border: "1px dashed #64748b" }}>
                             <label style={{ fontSize: "13px", fontWeight: "bold" }}>Upload hình nền App:</label>
                             <input id="bg-input" type="file" accept="image/png, image/jpeg" onChange={(e) => setBgFile(e.target.files[0])} style={{ display: "block", marginBottom: "10px", width: "100%" }} />
@@ -249,10 +257,25 @@ const Admin = () => {
                         </div>
 
                         <label style={{ fontSize: "13px", fontWeight: "bold" }}>Đếm ngược (giây):</label>
-                        <input type="number" value={settings.countdown_capture} onChange={(e) => setSettings({ ...settings, countdown_capture: parseInt(e.target.value) || 3 })} style={{ width: "100%", padding: "8px", marginBottom: "10px", boxSizing: "border-box" }} />
-                        <label style={{ fontSize: "13px", fontWeight: "bold" }}>Chờ mã QR (giây):</label>
-                        <input type="number" value={settings.review_timeout} onChange={(e) => setSettings({ ...settings, review_timeout: parseInt(e.target.value) || 20 })} style={{ width: "100%", padding: "8px", marginBottom: "10px", boxSizing: "border-box" }} />
-                        <button onClick={handleSaveSettings} style={{ padding: "10px", backgroundColor: "#007bff", color: "white", border: "none", width: "100%", borderRadius: "4px", cursor: "pointer", fontWeight: "bold" }}>Lưu Cài Đặt</button>
+                        <input
+                            type="number"
+                            value={settings.countdown_capture}
+                            onChange={(e) => {
+                                const val = e.target.value;
+                                // Cho phép để trống (string) hoặc chuyển thành số nếu có dữ liệu
+                                setSettings({ ...settings, countdown_capture: val === "" ? "" : parseInt(val) });
+                            }}
+                            style={{ width: "100%", padding: "8px", marginBottom: "10px", boxSizing: "border-box" }}
+                        />                        <label style={{ fontSize: "13px", fontWeight: "bold" }}>Chờ mã QR (giây):</label>
+                        <input
+                            type="number"
+                            value={settings.review_timeout}
+                            onChange={(e) => {
+                                const val = e.target.value;
+                                setSettings({ ...settings, review_timeout: val === "" ? "" : parseInt(val) });
+                            }}
+                            style={{ width: "100%", padding: "8px", marginBottom: "10px", boxSizing: "border-box" }}
+                        />                        <button onClick={handleSaveSettings} style={{ padding: "10px", backgroundColor: "#007bff", color: "white", border: "none", width: "100%", borderRadius: "4px", cursor: "pointer", fontWeight: "bold" }}>Lưu Cài Đặt</button>
                     </div>
 
                     {/* KHỐI UPLOAD & DANH SÁCH KHUNG */}
@@ -260,8 +283,13 @@ const Admin = () => {
                         <h2 style={{ fontSize: "18px", marginBottom: "10px" }}>Quản lý Khung</h2>
                         <form onSubmit={handleUpload} style={{ marginBottom: "20px" }}>
                             <input type="text" placeholder="Tên khung" value={uploadName} onChange={(e) => setUploadName(e.target.value)} style={{ width: "100%", padding: "8px", marginBottom: "10px", boxSizing: "border-box" }} />
-                            <input id="file-input" type="file" accept="image/png, image/jpeg" onChange={(e) => setUploadFile(e.target.files[0])} style={{ display: "block", marginBottom: "10px" }} />
-                            <button type="submit" style={{ padding: "10px", backgroundColor: "#28a745", color: "white", border: "none", width: "100%", borderRadius: "4px", cursor: "pointer", fontWeight: "bold" }}>Thêm Khung</button>
+                            <input
+                                id="file-input"
+                                type="file"
+                                accept="image/png, image/jpeg"
+                                onChange={handleFileChange}
+                                style={{ display: "block", marginBottom: "10px" }}
+                            />                            <button type="submit" style={{ padding: "10px", backgroundColor: "#28a745", color: "white", border: "none", width: "100%", borderRadius: "4px", cursor: "pointer", fontWeight: "bold" }}>Thêm Khung</button>
                         </form>
 
                         <div style={{ maxHeight: "400px", overflowY: "auto", pr: "5px" }}>
@@ -278,19 +306,19 @@ const Admin = () => {
                 {/* ========== CỘT 2: KHU VỰC CẤU HÌNH CHI TIẾT VÀ PREVIEW (75%) ========== */}
                 <div style={{ flex: "1", backgroundColor: "#f8f9fa", padding: "20px", borderRadius: "8px", minHeight: "80vh" }}>
                     <h2>Tùy Chỉnh Khung: {editingTpl ? editingTpl.name : "Chưa chọn"}</h2>
-                    
+
                     {!editingTpl ? (
                         <p style={{ color: "#777", marginTop: "40px", fontSize: "18px" }}>Hãy chọn một khung ảnh bên trái để chỉnh sửa tọa độ.</p>
                     ) : (
                         <div style={{ marginTop: "100px", display: "flex", gap: "20px", height: "calc(100% - 60px)" }}>
-                            
+
                             {/* CỘT 2.1: PREVIEW (Hiển thị to) */}
                             <div style={{ flex: "1.5", display: "flex", flexDirection: "column" }}>
                                 <h3 style={{ textAlign: "center", marginTop: 0 }}>Xem Trước (Kéo thả trực tiếp)</h3>
-                                
+
                                 <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", backgroundColor: "#e2e8f0", borderRadius: "8px", padding: "10px" }}>
                                     <div ref={previewRef} style={{ position: "relative", border: "2px solid #334155", maxHeight: "65vh", touchAction: "none", aspectRatio: `${editingTpl.canvas_size.width} / ${editingTpl.canvas_size.height}`, backgroundColor: "#ddd", backgroundImage: `url(${editingTpl.image_url})`, backgroundSize: "100% 100%", overflow: "hidden", borderRadius: "4px", boxShadow: "0 10px 30px rgba(0,0,0,0.15)", margin: "0 auto", height: editingTpl.orientation === 'portrait' ? '100%' : 'auto', width: editingTpl.orientation === 'landscape' ? '100%' : 'auto' }}>
-                                        
+
                                         {/* Render Slots */}
                                         {editingTpl.slots.map((slot, idx) => {
                                             const scaleX = 100 / editingTpl.canvas_size.width;
@@ -317,7 +345,7 @@ const Admin = () => {
 
                             {/* CỘT 2.2: NHẬP SỐ LIỆU (Nằm cạnh Preview) */}
                             <div style={{ flex: "1", display: "flex", flexDirection: "column", gap: "15px", overflowY: "auto", paddingRight: "5px" }}>
-                                
+
                                 <div style={{ display: "flex", gap: "10px" }}>
                                     <div style={{ flex: 1 }}><label style={{ fontSize: "12px", fontWeight: "bold" }}>Định hướng:</label><select value={editingTpl.orientation} onChange={(e) => setEditingTpl({ ...editingTpl, orientation: e.target.value })} style={{ width: "100%", padding: "6px" }}><option value="portrait">Dọc</option><option value="landscape">Ngang</option></select></div>
                                     <div style={{ flex: 1 }}><label style={{ fontSize: "12px", fontWeight: "bold", color: "#dc3545" }}>W Gốc:</label><input type="number" readOnly value={editingTpl.canvas_size.width} style={{ width: "100%", padding: "6px", backgroundColor: "#e9ecef" }} /></div>
@@ -349,10 +377,10 @@ const Admin = () => {
                                         <div key={idx} onClick={() => setActiveElement({ type: 'slot', index: idx })}
                                             style={{ display: "flex", flexWrap: "wrap", gap: "4px", marginBottom: "8px", alignItems: "center", backgroundColor: activeElement.type === 'slot' && activeElement.index === idx ? "#e0f2fe" : "white", border: activeElement.type === 'slot' && activeElement.index === idx ? "2px solid #38bdf8" : "1px solid #ccc", padding: "8px", borderRadius: "6px", cursor: "pointer" }}>
                                             <b style={{ width: "50px", color: "#007bff", fontSize: "13px" }}>Ảnh {idx + 1}:</b>
-                                            <span style={{fontSize: "12px"}}>X:</span><input type="number" style={{ width: "45px", padding: "2px" }} value={slot.x} onChange={(e) => { const newSlots = [...editingTpl.slots]; newSlots[idx].x = parseInt(e.target.value) || 0; setEditingTpl({ ...editingTpl, slots: newSlots }); }} />
-                                            <span style={{fontSize: "12px"}}>Y:</span><input type="number" style={{ width: "45px", padding: "2px" }} value={slot.y} onChange={(e) => { const newSlots = [...editingTpl.slots]; newSlots[idx].y = parseInt(e.target.value) || 0; setEditingTpl({ ...editingTpl, slots: newSlots }); }} />
-                                            <span style={{fontSize: "12px"}}>W:</span><input type="number" style={{ width: "45px", padding: "2px" }} value={slot.width} onChange={(e) => { const newSlots = [...editingTpl.slots]; newSlots[idx].width = parseInt(e.target.value) || 0; setEditingTpl({ ...editingTpl, slots: newSlots }); }} />
-                                            <span style={{fontSize: "12px"}}>H:</span><input type="number" style={{ width: "45px", padding: "2px" }} value={slot.height} onChange={(e) => { const newSlots = [...editingTpl.slots]; newSlots[idx].height = parseInt(e.target.value) || 0; setEditingTpl({ ...editingTpl, slots: newSlots }); }} />
+                                            <span style={{ fontSize: "12px" }}>X:</span><input type="number" style={{ width: "45px", padding: "2px" }} value={slot.x} onChange={(e) => { const newSlots = [...editingTpl.slots]; newSlots[idx].x = parseInt(e.target.value) || 0; setEditingTpl({ ...editingTpl, slots: newSlots }); }} />
+                                            <span style={{ fontSize: "12px" }}>Y:</span><input type="number" style={{ width: "45px", padding: "2px" }} value={slot.y} onChange={(e) => { const newSlots = [...editingTpl.slots]; newSlots[idx].y = parseInt(e.target.value) || 0; setEditingTpl({ ...editingTpl, slots: newSlots }); }} />
+                                            <span style={{ fontSize: "12px" }}>W:</span><input type="number" style={{ width: "45px", padding: "2px" }} value={slot.width} onChange={(e) => { const newSlots = [...editingTpl.slots]; newSlots[idx].width = parseInt(e.target.value) || 0; setEditingTpl({ ...editingTpl, slots: newSlots }); }} />
+                                            <span style={{ fontSize: "12px" }}>H:</span><input type="number" style={{ width: "45px", padding: "2px" }} value={slot.height} onChange={(e) => { const newSlots = [...editingTpl.slots]; newSlots[idx].height = parseInt(e.target.value) || 0; setEditingTpl({ ...editingTpl, slots: newSlots }); }} />
                                             <button onClick={(e) => { e.stopPropagation(); handleRemoveSlot(idx); }} style={{ marginLeft: "auto", backgroundColor: "#dc3545", color: "white", border: "none", borderRadius: "3px", padding: "4px", cursor: "pointer", fontSize: "11px" }}>Xóa</button>
                                         </div>
                                     ))}
@@ -364,9 +392,9 @@ const Admin = () => {
                                     </label>
                                     {editingTpl.qr_config.print_on_photo && (
                                         <div style={{ display: "flex", gap: "4px", alignItems: "center" }}>
-                                            <span style={{fontSize: "12px"}}>X:</span><input type="number" style={{ width: "45px", padding: "2px" }} value={editingTpl.qr_config.x} onChange={(e) => setEditingTpl({ ...editingTpl, qr_config: { ...editingTpl.qr_config, x: parseInt(e.target.value) || 0 } })} />
-                                            <span style={{fontSize: "12px"}}>Y:</span><input type="number" style={{ width: "45px", padding: "2px" }} value={editingTpl.qr_config.y} onChange={(e) => setEditingTpl({ ...editingTpl, qr_config: { ...editingTpl.qr_config, y: parseInt(e.target.value) || 0 } })} />
-                                            <span style={{fontSize: "12px"}}>Size:</span><input type="number" style={{ width: "45px", padding: "2px" }} value={editingTpl.qr_config.size} onChange={(e) => setEditingTpl({ ...editingTpl, qr_config: { ...editingTpl.qr_config, size: parseInt(e.target.value) || 100 } })} />
+                                            <span style={{ fontSize: "12px" }}>X:</span><input type="number" style={{ width: "45px", padding: "2px" }} value={editingTpl.qr_config.x} onChange={(e) => setEditingTpl({ ...editingTpl, qr_config: { ...editingTpl.qr_config, x: parseInt(e.target.value) || 0 } })} />
+                                            <span style={{ fontSize: "12px" }}>Y:</span><input type="number" style={{ width: "45px", padding: "2px" }} value={editingTpl.qr_config.y} onChange={(e) => setEditingTpl({ ...editingTpl, qr_config: { ...editingTpl.qr_config, y: parseInt(e.target.value) || 0 } })} />
+                                            <span style={{ fontSize: "12px" }}>Size:</span><input type="number" style={{ width: "45px", padding: "2px" }} value={editingTpl.qr_config.size} onChange={(e) => setEditingTpl({ ...editingTpl, qr_config: { ...editingTpl.qr_config, size: parseInt(e.target.value) || 100 } })} />
                                         </div>
                                     )}
                                 </div>
