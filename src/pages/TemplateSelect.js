@@ -18,7 +18,9 @@ function TemplateSelect() {
     fetch('http://127.0.0.1:8000/api/templates')
       .then(res => res.json())
       .then(data => {
-        setTemplates(data);
+        // Lọc bỏ các khung đã bị Admin ẩn
+        const visibleTemplates = data.filter(tpl => !tpl.hidden);
+        setTemplates(visibleTemplates);
         setIsLoading(false);
       })
       .catch(err => {
@@ -61,7 +63,6 @@ function TemplateSelect() {
   return (
     <div className="kiosk-container" style={{ justifyContent: 'center' }}>
       
-      {/* Sửa lại text shadow một chút để chữ không bị chìm nếu hình nền quá sáng/tối */}
       <h1 style={{ fontSize: 'clamp(2.5rem, 5vw, 4rem)', marginBottom: '0.5rem', color: '#0f172a', textShadow: '0 2px 10px rgba(255,255,255,0.8)' }}>
         CHỌN KHUNG ẢNH
       </h1>
@@ -71,6 +72,8 @@ function TemplateSelect() {
 
       {isLoading ? (
         <p style={{ fontSize: '2rem', color: '#0f172a', fontWeight: 'bold', background: 'rgba(255,255,255,0.7)', padding: '10px 20px', borderRadius: '10px' }}>Đang tải danh sách khung...</p>
+      ) : templates.length === 0 ? (
+        <p style={{ fontSize: '2rem', color: '#0f172a', fontWeight: 'bold', background: 'rgba(255,255,255,0.7)', padding: '10px 20px', borderRadius: '10px' }}>Hiện chưa có khung ảnh nào.</p>
       ) : (
         
         /* KHU VỰC BĂNG CHUYỀN 3D (CAROUSEL) */
@@ -124,7 +127,7 @@ function TemplateSelect() {
             } else if (offset === -1) {
               translateX = '-110%'; 
               scale = 0.75;
-              opacity = 0.7; // Tăng nhẹ opacity cho khung 2 bên nhìn rõ hơn xíu
+              opacity = 0.7;
               zIndex = 5;
             } else if (offset === 1) {
               translateX = '110%'; 
@@ -152,11 +155,8 @@ function TemplateSelect() {
                   height: '85%',
                   aspectRatio: '2/3',
                   
-                  // ========================================================
-                  // ĐIỂM SỬA CHÍNH: Nền mờ ảo, xuyên thấu nhẹ (Glassmorphism)
-                  // ========================================================
                   backgroundColor: tpl.image_url ? 'rgba(255, 255, 255, 0.85)' : (tpl.color || 'rgba(255,255,255,0.85)'),
-                  backdropFilter: 'blur(8px)', // Làm mờ hình nền Brand phía sau khung
+                  backdropFilter: 'blur(8px)',
                   
                   backgroundImage: tpl.image_url ? `url(${tpl.image_url})` : 'none',
                   backgroundSize: 'contain',

@@ -16,16 +16,18 @@ function Home() {
       style={{ 
         cursor: 'pointer', 
         display: 'flex', 
+        flexDirection: 'column',
         alignItems: 'center', 
-        justifyContent: 'center', 
-        height: '170vh',
-        width: '100vw'
+        justifyContent: 'flex-end',   // 👈 Đẩy nội dung xuống dưới
+        height: '100vh',
+        width: '100vw',
+        paddingBottom: '15vh'         // 👈 Cách mép dưới 15% màn hình
       }}
     >
       <button 
         className="btn-primary animate-pulse-btn" 
         onClick={(e) => {
-          e.stopPropagation(); // Tránh bị xung đột sự kiện click vào nút
+          e.stopPropagation();
           handleStart();
         }}
         style={{

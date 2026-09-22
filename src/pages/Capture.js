@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useMemo } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import '../App.css';
 
@@ -7,43 +7,95 @@ function Capture() {
   const location = useLocation();
   const ws = useRef(null);
 
-  // 1. Lấy thông tin template từ trang trước
+  // ============================================================
+  // LẤY THÔNG TIN TEMPLATE TỪ TRANG TRƯỚC
+  // ============================================================
   const templateId = location.state?.templateId || 'tpl_default';
   const template = location.state?.template;
 
-  // 2. Tính toán tỷ lệ Crop Mask cho Liveview
-  // Tỷ lệ gốc của Camera là 16:9
   const CAMERA_ASPECT_RATIO = 16 / 9;
 
-  // Lấy kích thước slot đầu tiên để tính tỷ lệ crop in ấn
-  const firstSlot = template?.slots?.[0];
-  const targetRatio = (firstSlot?.width && firstSlot?.height)
-    ? (firstSlot.width / firstSlot.height)
-    : CAMERA_ASPECT_RATIO;
-
-  // Tính % chiều rộng vùng in thực tế (Giới hạn tối đa 100%)
-  const safeWidthPercent = Math.min(100, Math.max(20, (targetRatio / CAMERA_ASPECT_RATIO) * 100));
-  // Phần trăm độ rộng của mỗi bên viền mờ
-  const sideMaskPercent = (100 - safeWidthPercent) / 2;
-
-  // 3. Các State điều khiển luồng chụp
+  // ============================================================
+  // STATE
+  // ============================================================
   const [step, setStep] = useState('CONNECTING');
   const [poseIndex, setPoseIndex] = useState(1);
   const [totalPoses, setTotalPoses] = useState(1);
   const [count, setCount] = useState(null);
   const [isFlashing, setIsFlashing] = useState(false);
-  const liveViewUrl = useRef(`http://127.0.0.1:8000/api/liveview?t=${Date.now()}`);
+  const [isWsConnected, setIsWsConnected] = useState(false);
+  const [isCameraReady, setIsCameraReady] = useState(false);
+  const [streamKey, setStreamKey] = useState(Date.now());
+  const hasStartedSession = useRef(false);
 
+  const liveViewUrl = `http://127.0.0.1:8000/api/liveview?t=${streamKey}`;
+
+  // ============================================================
+  // TÍNH TOÁN SLOT HIỆN TẠI
+  // ============================================================
+  const currentSlot = template?.slots?.[poseIndex - 1] || template?.slots?.[0];
+
+  // Tỷ lệ của slot (VD: 4:3 = 1.333, 16:9 = 1.778)
+  const targetRatio = (currentSlot?.width && currentSlot?.height)
+    ? (currentSlot.width / currentSlot.height)
+    : CAMERA_ASPECT_RATIO;
+
+  // Vùng sáng (vùng không bị mask) trong khung live view
+  const safeWidthPercent = Math.min(100, Math.max(20, (targetRatio / CAMERA_ASPECT_RATIO) * 100));
+  const sideMaskPercent = (100 - safeWidthPercent) / 2;
+
+  // ============================================================
+  // TÍNH TOÁN POSE GUIDE (dùng useMemo để tránh tính lại)
+  // ============================================================
+  //
+  // Nguyên lý:
+  // - Container của pose guide = vùng sáng (giữa 2 đường đứt nét)
+  // - Vùng sáng có tỷ lệ = targetRatio (đúng bằng slot)
+  // - Template được scale sao cho SLOT của nó vừa khít container
+  //
+  // Công thức:
+  //   width  = (canvas.width  / slot.width)  * 100%
+  //   height = (canvas.height / slot.height) * 100%
+  //   left   = -(slot.x / slot.width)  * 100%
+  //   top    = -(slot.y / slot.height) * 100%
+  //
+  const poseGuideTransform = useMemo(() => {
+    if (!template?.image_url) return null;
+
+    const canvas = template.canvas_size || { width: 1080, height: 1920 };
+    const slot = currentSlot || {
+      x: 0,
+      y: 0,
+      width: canvas.width,
+      height: canvas.height
+    };
+
+    return {
+      width: `${(canvas.width / slot.width) * 100}%`,
+      height: `${(canvas.height / slot.height) * 100}%`,
+      left: `${-(slot.x / slot.width) * 100}%`,
+      top: `${-(slot.y / slot.height) * 100}%`,
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    template?.image_url,
+    template?.canvas_size?.width,
+    template?.canvas_size?.height,
+    currentSlot?.x,
+    currentSlot?.y,
+    currentSlot?.width,
+    currentSlot?.height,
+  ]);
+
+  // ============================================================
+  // WEBSOCKET
+  // ============================================================
   useEffect(() => {
     ws.current = new WebSocket('ws://127.0.0.1:8000/ws/session');
 
     ws.current.onopen = () => {
       console.log('Đã kết nối WebSocket chụp ảnh!');
-      ws.current.send(JSON.stringify({
-        action: "START_SESSION",
-        template_id: templateId,
-        session_id: `session_${Date.now()}`
-      }));
+      setIsWsConnected(true);
     };
 
     ws.current.onmessage = (event) => {
@@ -77,6 +129,58 @@ function Capture() {
     };
   }, [navigate, templateId]);
 
+  // ============================================================
+  // BẮT ĐẦU PHIÊN CHỤP KHI CẢ WS VÀ CAMERA SẴN SÀNG
+  // ============================================================
+  useEffect(() => {
+    if (isWsConnected && isCameraReady && !hasStartedSession.current) {
+      console.log('Hệ thống sẵn sàng. Bắt đầu phiên chụp!');
+      hasStartedSession.current = true;
+      ws.current.send(JSON.stringify({
+        action: "START_SESSION",
+        template_id: templateId,
+        session_id: `session_${Date.now()}`
+      }));
+    }
+  }, [isWsConnected, isCameraReady, templateId]);
+
+  // ============================================================
+  // CƠ CHẾ CHỐNG KẸT KHẨN CẤP
+  // ============================================================
+  useEffect(() => {
+    let emergencyTimer;
+    if (step === 'CAPTURING') {
+      emergencyTimer = setTimeout(() => {
+        console.log("Phát hiện kẹt tiến trình! Khởi động lại...");
+        setIsCameraReady(false);
+        setStreamKey(Date.now());
+        setStep('CONNECTING');
+        hasStartedSession.current = false;
+      }, 8000);
+    }
+    return () => clearTimeout(emergencyTimer);
+  }, [step]);
+
+  // ============================================================
+  // XỬ LÝ LỖI LIVE VIEW
+  // ============================================================
+  const handleImageError = () => {
+    console.log("Lỗi tải Live View, đang thử lại...");
+    setIsCameraReady(false);
+
+    if (step !== 'COMPLETED' && step !== 'PROCESSING') {
+      setStep('CONNECTING');
+      hasStartedSession.current = false;
+    }
+
+    setTimeout(() => {
+      setStreamKey(Date.now());
+    }, 3000);
+  };
+
+  // ============================================================
+  // ĐẾM NGƯỢC
+  // ============================================================
   useEffect(() => {
     let timer;
     if (step === 'COUNTING' && count !== null && count > 0) {
@@ -87,6 +191,9 @@ function Capture() {
     return () => clearInterval(timer);
   }, [step, count]);
 
+  // ============================================================
+  // RENDER
+  // ============================================================
   return (
     <div className="kiosk-container" style={{ justifyContent: 'center' }}>
 
@@ -96,19 +203,20 @@ function Capture() {
       {/* Tiêu đề hướng dẫn */}
       <div className="text-instruction" style={{ marginTop: '-2vh', marginBottom: '1vh', textAlign: 'center', width: '100%' }}>
         <h1 style={{ fontSize: 'clamp(2rem, 4.5vh, 3.5rem)', color: '#0f172a', fontWeight: '800', margin: '0 0 0.5rem 0' }}>
-          {step === 'CONNECTING' && "ĐANG KHỞI ĐỘNG CAMERA..."}
-          {step === 'COUNTING' && `ĐANG CHỤP: KIỂU ${poseIndex} / ${totalPoses}`}
-          {step === 'CAPTURING' && "CƯỜI LÊN NÀO!"}
-          {step === 'PROCESSING' && "ĐANG XỬ LÝ VÀ RỬA ẢNH..."}
+          {!isCameraReady && "ĐANG KẾT NỐI CAMERA..."}
+          {isCameraReady && step === 'CONNECTING' && "CHUẨN BỊ..."}
+          {isCameraReady && step === 'COUNTING' && `ĐANG CHỤP: KIỂU ${poseIndex} / ${totalPoses}`}
+          {isCameraReady && step === 'CAPTURING' && "CƯỜI LÊN NÀO!"}
+          {isCameraReady && step === 'PROCESSING' && "ĐANG XỬ LÝ VÀ RỬA ẢNH..."}
         </h1>
       </div>
 
-      {/* KHUNG LIVE VIEW NGANG 16:9 */}
+      {/* KHUNG LIVE VIEW */}
       <div
         style={{
           position: 'relative',
           height: '62vh',
-          aspectRatio: '16 / 9', /* Chuẩn màn hình ngang 16:9 của máy ảnh */
+          aspectRatio: '16 / 9',
           borderRadius: '1.5rem',
           overflow: 'hidden',
           backgroundColor: '#000',
@@ -116,10 +224,17 @@ function Capture() {
           border: '6px solid white'
         }}
       >
-        {/* 1. Luồng Camera 16:9 */}
+        {/* Luồng Camera 16:9 */}
         <img
-          src={liveViewUrl.current}
+          src={liveViewUrl}
           alt="Live View"
+          onLoad={() => {
+            if (!isCameraReady) {
+              console.log('Đã nhận được luồng hình ảnh từ Camera!');
+              setIsCameraReady(true);
+            }
+          }}
+          onError={handleImageError}
           style={{
             width: "100%",
             height: "100%",
@@ -128,53 +243,57 @@ function Capture() {
           }}
         />
 
-        {/* ============================================================== */}
-        {/* TÍNH NĂNG MỚI: LỚP PHỦ HƯỚNG DẪN TẠO DÁNG (POSE GUIDE)          */}
-        {/* ============================================================== */}
-        {template?.guide_config?.enabled && template.slots && template.slots[poseIndex - 1] && (
-          <div style={{
-            position: 'absolute',
-            top: 0, left: 0, width: '100%', height: '100%',
-            overflow: 'hidden',
-            pointerEvents: 'none', // Xuyên qua chuột để không chặn tương tác
-            opacity: template.guide_config.opacity || 0.4,
-            zIndex: 4 // Đặt dưới lớp Mask (5)
-          }}>
+        {/* ============================================================ */}
+        {/* POSE GUIDE — Đặt vào VÙNG SÁNG (giữa 2 đường mask)          */}
+        {/* ============================================================ */}
+        {template?.guide_config?.enabled && poseGuideTransform && (
+          <div
+            style={{
+              position: 'absolute',
+              left: `${sideMaskPercent}%`,
+              top: '0%',
+              width: `${safeWidthPercent}%`,
+              height: '100%',
+              overflow: 'hidden',
+              pointerEvents: 'none',
+              opacity: template.guide_config.opacity || 0.4,
+              zIndex: 4
+            }}
+          >
             <img
               src={template.image_url}
               alt="Pose Guide"
               style={{
                 position: 'absolute',
-                // Phóng to kích thước ảnh nền dựa trên tỷ lệ giữa Canvas tổng và kích thước Ô hiện tại
-                width: `${(template.canvas_size.width / template.slots[poseIndex - 1].width) * 100}%`,
-                height: `${(template.canvas_size.height / template.slots[poseIndex - 1].height) * 100}%`,
-                // Dịch chuyển lùi lại bằng chính tọa độ X, Y của Ô hiện tại
-                left: `${-(template.slots[poseIndex - 1].x / template.slots[poseIndex - 1].width) * 100}%`,
-                top: `${-(template.slots[poseIndex - 1].y / template.slots[poseIndex - 1].height) * 100}%`,
-                transform: 'scaleX(-1)'
+                width: poseGuideTransform.width,
+                height: poseGuideTransform.height,
+                left: poseGuideTransform.left,
+                top: poseGuideTransform.top,
+                transform: 'scaleX(-1)',
+                transformOrigin: 'center center',
               }}
             />
           </div>
         )}
 
-        {/* 2. LỚP MASK LÀM MỜ 2 BÊN RÌA THỪA */}
-        {sideMaskPercent > 0 && (
+        {/* ============================================================ */}
+        {/* LỚP MASK LÀM MỜ 2 BÊN RÌA THỪA                              */}
+        {/* ============================================================ */}
+        {sideMaskPercent > 0.5 && (
           <>
-            {/* Viền mờ bên trái */}
             <div style={{
               position: 'absolute',
               top: 0,
               bottom: 0,
               left: 0,
               width: `${sideMaskPercent}%`,
-              backgroundColor: 'rgba(15, 23, 42, 0.65)', // Làm mờ vùng không in
+              backgroundColor: 'rgba(15, 23, 42, 0.65)',
               backdropFilter: 'blur(2px)',
-              borderRight: '2px dashed rgba(255, 255, 255, 0.6)', // Vạch nét đứt ranh giới
+              borderRight: '2px dashed rgba(255, 255, 255, 0.6)',
               pointerEvents: 'none',
               zIndex: 5
             }} />
 
-            {/* Viền mờ bên phải */}
             <div style={{
               position: 'absolute',
               top: 0,
@@ -190,7 +309,7 @@ function Capture() {
           </>
         )}
 
-        {/* 3. Số đếm ngược khổng lồ nằm ở vùng sáng an toàn */}
+        {/* Số đếm ngược khổng lồ */}
         {step === 'COUNTING' && count !== null && !isFlashing && (
           <div
             style={{
@@ -211,7 +330,7 @@ function Capture() {
           </div>
         )}
 
-        {/* 4. Màn hình chờ rửa ảnh */}
+        {/* Màn hình chờ rửa ảnh */}
         {step === 'PROCESSING' && (
           <div
             style={{
