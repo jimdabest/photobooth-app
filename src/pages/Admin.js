@@ -19,6 +19,9 @@ const Admin = () => {
 
     const [showLiveView, setShowLiveView] = useState(false);
 
+    // Ref quản lý timer hiển thị thông báo
+    const messageTimerRef = useRef(null);
+
     // Trạng thái mở/đóng của các nav bên trái
     const [expandedNav, setExpandedNav] = useState({
         settings: false,
@@ -63,7 +66,10 @@ const Admin = () => {
         document.body.style.overflow = "hidden";
         fetchSettings();
         fetchTemplates();
-        return () => { document.body.style.overflow = ""; };
+        return () => {
+            document.body.style.overflow = "";
+            if (messageTimerRef.current) clearTimeout(messageTimerRef.current);
+        };
     }, []);
 
     const fetchSettings = async () => {
@@ -222,11 +228,9 @@ const Admin = () => {
         }
     };
 
-    // ============================================================
-    // HÀM ẨN/HIỆN KHUNG KHỎI TRANG CHỌN KHUNG CỦA KHÁCH
-    // ============================================================
+    // Ẩn/hiện khung khỏi trang chọn khung của khách
     const handleToggleHidden = async (tpl, e) => {
-        e.stopPropagation(); // Không trigger chọn template khi bấm nút
+        e.stopPropagation();
 
         const updatedTpl = { ...tpl, hidden: !tpl.hidden };
 
@@ -238,11 +242,9 @@ const Admin = () => {
             });
 
             if (res.ok) {
-                // Cập nhật state local ngay lập tức, không cần fetch lại
                 setTemplates(prev =>
                     prev.map(t => t.id === tpl.id ? updatedTpl : t)
                 );
-                // Nếu đang edit chính template đó → cập nhật editingTpl
                 if (editingTpl?.id === tpl.id) {
                     setEditingTpl(updatedTpl);
                 }
@@ -298,13 +300,14 @@ const Admin = () => {
 
     const showMessage = (msg) => {
         setMessage(msg);
-        setTimeout(() => setMessage(""), 3000);
+        if (messageTimerRef.current) clearTimeout(messageTimerRef.current);
+        messageTimerRef.current = setTimeout(() => setMessage(""), 3000);
     };
 
     return (
         <div style={{ display: "flex", flexDirection: "column", height: "100vh", backgroundColor: "#f1f5f9", fontFamily: "sans-serif", margin: 0, padding: 0, boxSizing: "border-box" }}>
 
-            {/* CSS Tùy chỉnh ẩn mũi tên tăng giảm của input number */}
+            {/* CSS tùy chỉnh ẩn mũi tên tăng giảm của input number */}
             <style>{`
                 input[type=number]::-webkit-inner-spin-button, 
                 input[type=number]::-webkit-outer-spin-button { 
@@ -322,7 +325,7 @@ const Admin = () => {
                 </div>
             )}
 
-            {/* HEADER */}
+            {/* Header */}
             <div style={{ padding: "15px 20px", backgroundColor: "white", borderBottom: "1px solid #e2e8f0", zIndex: 10, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                 <h1 style={{ fontSize: "20px", margin: 0, color: "#0f172a", fontWeight: "bold" }}>Hệ Thống Quản Trị PhotoBooth</h1>
                 <button onClick={() => navigate('/')} style={{ padding: "10px 20px", backgroundColor: "#3b82f6", color: "white", border: "none", borderRadius: "6px", cursor: "pointer", fontWeight: "bold", fontSize: "14px", boxShadow: "0 2px 4px rgba(0,0,0,0.1)" }}>
@@ -330,13 +333,13 @@ const Admin = () => {
                 </button>
             </div>
 
-            {/* WORKSPACE MAIN */}
+            {/* Workspace */}
             <div style={{ display: "flex", flex: 1, overflow: "hidden", padding: "20px", gap: "20px" }}>
 
-                {/* CỘT 1: NAVIGATION MENU (TRÁI) */}
+                {/* Cột 1: Navigation menu */}
                 <div style={{ width: "320px", display: "flex", flexDirection: "column", gap: "15px", overflowY: "auto", paddingRight: "5px" }}>
 
-                    {/* ACCORDION 1: Cài Đặt Chung */}
+                    {/* Cài đặt chung */}
                     <div style={{ backgroundColor: "white", borderRadius: "8px", boxShadow: "0 1px 3px rgba(0,0,0,0.1)", overflow: "hidden", flexShrink: 0 }}>
                         <div onClick={() => toggleNav('settings')} style={{ padding: "15px", display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer", backgroundColor: expandedNav.settings ? "#f8fafc" : "white" }}>
                             <h2 style={{ fontSize: "16px", margin: 0, color: "#0f172a" }}>Cài Đặt Chung</h2>
@@ -369,7 +372,7 @@ const Admin = () => {
                         )}
                     </div>
 
-                    {/* ACCORDION 2: Canh Góc Camera */}
+                    {/* Canh góc camera */}
                     <div style={{ backgroundColor: "white", borderRadius: "8px", boxShadow: "0 1px 3px rgba(0,0,0,0.1)", overflow: "hidden", flexShrink: 0 }}>
                         <div onClick={() => toggleNav('camera')} style={{ padding: "15px", display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer", backgroundColor: expandedNav.camera ? "#f8fafc" : "white" }}>
                             <h2 style={{ fontSize: "16px", margin: 0, color: "#0f172a" }}>Canh Góc Camera</h2>
@@ -382,7 +385,6 @@ const Admin = () => {
                                     {showLiveView ? "Đang bật xem trước" : "Đang tắt camera"}
                                 </span>
 
-                                {/* Nút Công Tắc (Toggle Switch) */}
                                 <div onClick={toggleLiveView} style={{ width: "50px", height: "26px", backgroundColor: showLiveView ? "#10b981" : "#cbd5e1", borderRadius: "13px", position: "relative", cursor: "pointer", transition: "background-color 0.3s ease" }}>
                                     <div style={{ width: "22px", height: "22px", backgroundColor: "white", borderRadius: "50%", position: "absolute", top: "2px", left: showLiveView ? "26px" : "2px", transition: "left 0.3s ease", boxShadow: "0 1px 3px rgba(0,0,0,0.2)" }} />
                                 </div>
@@ -390,7 +392,7 @@ const Admin = () => {
                         )}
                     </div>
 
-                    {/* ACCORDION 3: Quản Lý Khung */}
+                    {/* Quản lý khung */}
                     <div style={{ backgroundColor: "white", borderRadius: "8px", boxShadow: "0 1px 3px rgba(0,0,0,0.1)", display: "flex", flexDirection: "column", flex: expandedNav.frames ? 1 : "none", minHeight: expandedNav.frames ? "400px" : "auto", flexShrink: 0, overflow: "hidden" }}>
                         <div onClick={() => toggleNav('frames')} style={{ padding: "15px", display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer", backgroundColor: expandedNav.frames ? "#f8fafc" : "white" }}>
                             <h2 style={{ fontSize: "16px", margin: 0, color: "#0f172a" }}>Quản Lý Khung Ảnh</h2>
@@ -421,11 +423,9 @@ const Admin = () => {
                                                 justifyContent: "space-between",
                                                 alignItems: "center",
                                                 gap: "8px",
-                                                // Giảm opacity nếu khung đang bị ẩn
                                                 opacity: tpl.hidden ? 0.55 : 1
                                             }}
                                         >
-                                            {/* Thông tin khung */}
                                             <div style={{ flex: 1, minWidth: 0 }}>
                                                 <b style={{
                                                     color: "#0f172a",
@@ -436,7 +436,6 @@ const Admin = () => {
                                                     whiteSpace: "nowrap"
                                                 }}>
                                                     {tpl.name}
-                                                    {/* Badge nhỏ báo hiệu khung đang ẩn */}
                                                     {tpl.hidden && (
                                                         <span style={{
                                                             marginLeft: "6px",
@@ -457,7 +456,6 @@ const Admin = () => {
                                                 </span>
                                             </div>
 
-                                            {/* NÚT ẨN/HIỆN KHUNG (kế bên từng khung) */}
                                             <button
                                                 onClick={(e) => handleToggleHidden(tpl, e)}
                                                 title={tpl.hidden ? "Hiện khung này trên trang chọn khung" : "Ẩn khung này khỏi trang chọn khung"}
@@ -484,14 +482,13 @@ const Admin = () => {
                     </div>
                 </div>
 
-                {/* CỘT 2: PREVIEW KHUNG HOẶC LIVE VIEW (GIỮA) */}
+                {/* Cột 2: Preview hoặc Live View */}
                 {showLiveView ? (
                     <div style={{ flex: 1, backgroundColor: "white", borderRadius: "8px", padding: "20px", display: "flex", flexDirection: "column", boxShadow: "0 1px 3px rgba(0,0,0,0.1)", overflow: "hidden", position: "relative" }}>
                         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
                             <h2 style={{ fontSize: "18px", margin: 0, color: "#0f172a", textAlign: "center", flex: 1 }}>
                                 Màn Hình Canh Góc Camera
                             </h2>
-                            {/* NÚT X ĐỂ TẮT LIVE VIEW NHANH */}
                             <button onClick={toggleLiveView} style={{ position: "absolute", top: "15px", right: "20px", width: "32px", height: "32px", borderRadius: "16px", backgroundColor: "#f1f5f9", border: "1px solid #cbd5e1", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", color: "#64748b", fontSize: "16px", fontWeight: "bold" }}>
                                 X
                             </button>
@@ -544,10 +541,7 @@ const Admin = () => {
                                                     width: `${slot.width * scaleX}%`,
                                                     height: `${slot.height * scaleY}%`,
                                                     backgroundColor: isActive ? "rgba(56, 189, 248, 0.35)" : "rgba(59, 130, 246, 0.2)",
-                                                    // LINE MẢNH HƠN: 1px dashed khi thường, 2px solid khi active
-                                                    border: isActive
-                                                        ? "2px solid #0284c7"
-                                                        : "1px dashed #3b82f6",
+                                                    border: isActive ? "2px solid #0284c7" : "1px dashed #3b82f6",
                                                     display: "flex",
                                                     alignItems: "center",
                                                     justifyContent: "center",
@@ -593,7 +587,7 @@ const Admin = () => {
                     </div>
                 )}
 
-                {/* CỘT 3: NHẬP THÔNG SỐ (PHẢI) */}
+                {/* Cột 3: Nhập thông số */}
                 <div style={{ width: "350px", backgroundColor: "white", borderRadius: "8px", padding: "20px", display: "flex", flexDirection: "column", overflowY: "auto", boxShadow: "0 1px 3px rgba(0,0,0,0.1)", boxSizing: "border-box", opacity: editingTpl && !showLiveView ? 1 : 0.5, pointerEvents: editingTpl && !showLiveView ? "auto" : "none" }}>
                     {editingTpl && (
                         <div style={{ display: "flex", flexDirection: "column", gap: "15px", height: "100%" }}>
@@ -629,7 +623,6 @@ const Admin = () => {
                                         style={{ display: "flex", flexDirection: "column", gap: "10px", marginBottom: "10px", backgroundColor: activeElement.type === 'slot' && activeElement.index === idx ? "#eff6ff" : "white", border: activeElement.type === 'slot' && activeElement.index === idx ? "2px solid #3b82f6" : "1px solid #cbd5e1", padding: "10px", borderRadius: "6px", cursor: "pointer" }}>
                                         <b style={{ color: "#0ea5e9", fontSize: "13px" }}>Ảnh {idx + 1}</b>
 
-                                        {/* ĐƯA X Y W H LÊN CÙNG 1 HÀNG */}
                                         <div style={{ display: "flex", gap: "6px", width: "100%" }}>
                                             <div style={{ display: "flex", alignItems: "center", gap: "4px", flex: 1 }}>
                                                 <span style={{ fontSize: "11px", color: "#64748b", fontWeight: "bold", width: "12px" }}>X</span>

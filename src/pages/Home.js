@@ -10,26 +10,22 @@ function Home() {
   };
 
   return (
-    <div 
-      className="kiosk-container" 
-      onClick={handleStart}
-      style={{ 
-        cursor: 'pointer', 
-        display: 'flex', 
+    <div
+      className="kiosk-container"
+      style={{
+        cursor: 'pointer',
+        display: 'flex',
         flexDirection: 'column',
-        alignItems: 'center', 
-        justifyContent: 'flex-end',   // 👈 Đẩy nội dung xuống dưới
+        alignItems: 'center',
+        justifyContent: 'flex-end',
         height: '100vh',
         width: '100vw',
-        paddingBottom: '15vh'         // 👈 Cách mép dưới 15% màn hình
+        paddingBottom: '15vh'
       }}
     >
-      <button 
-        className="btn-primary animate-pulse-btn" 
-        onClick={(e) => {
-          e.stopPropagation();
-          handleStart();
-        }}
+      <button
+        className="btn-primary animate-pulse-btn"
+        onClick={handleStart}
         style={{
           fontSize: 'clamp(1.5rem, 3vw, 2.5rem)',
           padding: '20px 50px'

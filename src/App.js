@@ -4,12 +4,11 @@ import Home from './pages/Home';
 import TemplateSelect from './pages/TemplateSelect';
 import Capture from './pages/Capture';
 import Review from './pages/Review';
+import Download from './pages/Download';
 import Admin from './pages/Admin';
 import './App.css';
 
-// =========================================================
-// QUẢN LÝ HÌNH NỀN
-// =========================================================
+// Quản lý hình nền theo route
 function BackgroundManager() {
   const location = useLocation();
 
@@ -54,14 +53,12 @@ function BackgroundManager() {
   return null;
 }
 
-// =========================================================
-// QUICK CONTROL — VÙNG CHẠM ẨN + TOGGLE FULLSCREEN
-// =========================================================
+// Vùng chạm ẩn góc phải trên để mở panel điều khiển
 function QuickControl() {
   const navigate = useNavigate();
   const location = useLocation();
   const [showPanel, setShowPanel] = useState(false);
-  const [isFullScreen, setIsFullScreen] = useState(true);   // 👈 State mới
+  const [isFullScreen, setIsFullScreen] = useState(true);
   const autoHideTimer = useRef(null);
 
   const isAdminPage = location.pathname.includes('/admin');
@@ -72,7 +69,7 @@ function QuickControl() {
       const cleanup = window.electronAPI.onWindowStateChange((data) => {
         setIsFullScreen(data.isFullScreen);
       });
-      return cleanup;   // Cleanup listener khi unmount
+      return cleanup;
     }
   }, []);
 
@@ -105,7 +102,7 @@ function QuickControl() {
 
   return (
     <>
-      {/* VÙNG CHẠM ẨN — GÓC PHẢI-TRÊN */}
+      {/* Vùng chạm ẩn góc phải trên */}
       {!showPanel && (
         <div
           onClick={openPanel}
@@ -123,7 +120,7 @@ function QuickControl() {
         />
       )}
 
-      {/* PANEL ĐIỀU KHIỂN */}
+      {/* Panel điều khiển */}
       {showPanel && (
         <>
           <div
@@ -165,7 +162,7 @@ function QuickControl() {
               borderBottom: '2px solid #f1f5f9'
             }}>
               <h3 style={{ margin: 0, fontSize: '18px', color: '#0f172a', fontWeight: 'bold' }}>
-                ⚙️ Điều Khiển
+                Điều Khiển
               </h3>
               <button
                 onClick={closePanel}
@@ -214,7 +211,7 @@ function QuickControl() {
               <span>Trang Quản Trị</span>
             </button>
 
-            {/* 🎯 Nút Toggle Fullscreen ↔ Windowed */}
+            {/* Nút Toggle Fullscreen và Windowed */}
             <button
               onClick={() => {
                 if (window.electronAPI?.toggleWindow) {
@@ -298,9 +295,6 @@ function QuickControl() {
   );
 }
 
-// =========================================================
-// APP CHÍNH
-// =========================================================
 function App() {
   return (
     <Router>
@@ -311,6 +305,7 @@ function App() {
         <Route path="/templates" element={<TemplateSelect />} />
         <Route path="/capture" element={<Capture />} />
         <Route path="/review" element={<Review />} />
+        <Route path="/download/:sessionId" element={<Download />} />
         <Route path="/admin" element={<Admin />} />
       </Routes>
     </Router>

@@ -2,22 +2,21 @@ import React, { useEffect, useRef, useState, useMemo } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import '../App.css';
 
+const CAMERA_ASPECT_RATIO = 16 / 9;
+
 function Capture() {
   const navigate = useNavigate();
   const location = useLocation();
-  const ws = useRef(null);
 
-  // ============================================================
-  // LẤY THÔNG TIN TEMPLATE TỪ TRANG TRƯỚC
-  // ============================================================
+  // Refs quản lý WebSocket và auto-reconnect
+  const wsRef = useRef(null);
+  const reconnectAttemptRef = useRef(0);
+  const hasStartedSession = useRef(false);
+
   const templateId = location.state?.templateId || 'tpl_default';
   const template = location.state?.template;
 
-  const CAMERA_ASPECT_RATIO = 16 / 9;
-
-  // ============================================================
-  // STATE
-  // ============================================================
+  // State
   const [step, setStep] = useState('CONNECTING');
   const [poseIndex, setPoseIndex] = useState(1);
   const [totalPoses, setTotalPoses] = useState(1);
@@ -26,39 +25,21 @@ function Capture() {
   const [isWsConnected, setIsWsConnected] = useState(false);
   const [isCameraReady, setIsCameraReady] = useState(false);
   const [streamKey, setStreamKey] = useState(Date.now());
-  const hasStartedSession = useRef(false);
+  const [criticalError, setCriticalError] = useState(null);
 
   const liveViewUrl = `http://127.0.0.1:8000/api/liveview?t=${streamKey}`;
 
-  // ============================================================
-  // TÍNH TOÁN SLOT HIỆN TẠI
-  // ============================================================
+  // Slot hiện tại và tỷ lệ vùng sáng
   const currentSlot = template?.slots?.[poseIndex - 1] || template?.slots?.[0];
 
-  // Tỷ lệ của slot (VD: 4:3 = 1.333, 16:9 = 1.778)
   const targetRatio = (currentSlot?.width && currentSlot?.height)
     ? (currentSlot.width / currentSlot.height)
     : CAMERA_ASPECT_RATIO;
 
-  // Vùng sáng (vùng không bị mask) trong khung live view
   const safeWidthPercent = Math.min(100, Math.max(20, (targetRatio / CAMERA_ASPECT_RATIO) * 100));
   const sideMaskPercent = (100 - safeWidthPercent) / 2;
 
-  // ============================================================
-  // TÍNH TOÁN POSE GUIDE (dùng useMemo để tránh tính lại)
-  // ============================================================
-  //
-  // Nguyên lý:
-  // - Container của pose guide = vùng sáng (giữa 2 đường đứt nét)
-  // - Vùng sáng có tỷ lệ = targetRatio (đúng bằng slot)
-  // - Template được scale sao cho SLOT của nó vừa khít container
-  //
-  // Công thức:
-  //   width  = (canvas.width  / slot.width)  * 100%
-  //   height = (canvas.height / slot.height) * 100%
-  //   left   = -(slot.x / slot.width)  * 100%
-  //   top    = -(slot.y / slot.height) * 100%
-  //
+  // Tính toán vị trí pose guide khớp với vùng sáng
   const poseGuideTransform = useMemo(() => {
     if (!template?.image_url) return null;
 
@@ -87,71 +68,105 @@ function Capture() {
     currentSlot?.height,
   ]);
 
-  // ============================================================
-  // WEBSOCKET
-  // ============================================================
+  // WebSocket với auto-reconnect
   useEffect(() => {
-    ws.current = new WebSocket('ws://127.0.0.1:8000/ws/session');
+    let isMounted = true;
 
-    ws.current.onopen = () => {
-      console.log('Đã kết nối WebSocket chụp ảnh!');
-      setIsWsConnected(true);
+    const connect = () => {
+      if (!isMounted) return;
+
+      const ws = new WebSocket('ws://127.0.0.1:8000/ws/session');
+      wsRef.current = ws;
+
+      ws.onopen = () => {
+        if (!isMounted) return;
+        console.log('Đã kết nối WebSocket');
+        setIsWsConnected(true);
+        reconnectAttemptRef.current = 0;
+      };
+
+      ws.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+
+          if (data.event === 'START_COUNTDOWN') {
+            setPoseIndex(data.current_pose);
+            setTotalPoses(data.total_poses);
+            setCount(data.countdown);
+            setStep('COUNTING');
+          }
+          else if (data.event === 'TRIGGER_FLASH') {
+            setStep('CAPTURING');
+            setIsFlashing(true);
+            setTimeout(() => setIsFlashing(false), 400);
+          }
+          else if (data.event === 'PROCESSING') {
+            setStep('PROCESSING');
+          }
+          else if (data.event === 'COMPLETED') {
+            navigate('/review', {
+              state: {
+                imageUrl: data.final_image_url,
+                sessionId: data.session_id,
+                cloudUrl: data.cloud_url || '',
+                cloudPoses: data.cloud_poses || []
+              }
+            });
+          }
+          else if (data.event === 'CRITICAL_ERROR') {
+            setCriticalError(data.message);
+          }
+        } catch (err) {
+          console.error('Lỗi parse WebSocket:', err);
+        }
+      };
+
+      ws.onclose = () => {
+        if (!isMounted) return;
+        setIsWsConnected(false);
+
+        // Exponential backoff: 1s, 2s, 4s, tối đa 5s
+        const delay = Math.min(1000 * Math.pow(2, reconnectAttemptRef.current), 5000);
+        reconnectAttemptRef.current += 1;
+
+        console.log(`WebSocket đóng, thử lại sau ${delay}ms`);
+        setTimeout(connect, delay);
+      };
+
+      ws.onerror = () => {
+        // Lỗi sẽ trigger onclose, không cần xử lý riêng
+      };
     };
 
-    ws.current.onmessage = (event) => {
-      try {
-        const data = JSON.parse(event.data);
-
-        if (data.event === 'START_COUNTDOWN') {
-          setPoseIndex(data.current_pose);
-          setTotalPoses(data.total_poses);
-          setCount(data.countdown);
-          setStep('COUNTING');
-        }
-        else if (data.event === 'TRIGGER_FLASH') {
-          setStep('CAPTURING');
-          setIsFlashing(true);
-          setTimeout(() => setIsFlashing(false), 400);
-        }
-        else if (data.event === 'PROCESSING') {
-          setStep('PROCESSING');
-        }
-        else if (data.event === 'COMPLETED') {
-          navigate('/review', { state: { imageUrl: data.final_image_url } });
-        }
-      } catch (err) {
-        console.error("Lỗi parse WS:", err);
-      }
-    };
+    connect();
 
     return () => {
-      if (ws.current) ws.current.close();
+      isMounted = false;
+      if (wsRef.current) {
+        wsRef.current.close();
+      }
     };
-  }, [navigate, templateId]);
+  }, [navigate]);
 
-  // ============================================================
-  // BẮT ĐẦU PHIÊN CHỤP KHI CẢ WS VÀ CAMERA SẴN SÀNG
-  // ============================================================
+  // Bắt đầu phiên chụp khi cả WS và camera sẵn sàng
   useEffect(() => {
-    if (isWsConnected && isCameraReady && !hasStartedSession.current) {
-      console.log('Hệ thống sẵn sàng. Bắt đầu phiên chụp!');
+    if (isWsConnected && isCameraReady && !hasStartedSession.current && !criticalError) {
+      console.log('Bắt đầu phiên chụp');
       hasStartedSession.current = true;
-      ws.current.send(JSON.stringify({
+      wsRef.current.send(JSON.stringify({
         action: "START_SESSION",
         template_id: templateId,
-        session_id: `session_${Date.now()}`
+        session_id: `session_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
       }));
     }
-  }, [isWsConnected, isCameraReady, templateId]);
+  }, [isWsConnected, isCameraReady, templateId, criticalError]);
 
-  // ============================================================
-  // CƠ CHẾ CHỐNG KẸT KHẨN CẤP
-  // ============================================================
+  // Cơ chế chống kẹt
   useEffect(() => {
     let emergencyTimer;
     if (step === 'CAPTURING') {
       emergencyTimer = setTimeout(() => {
-        console.log("Phát hiện kẹt tiến trình! Khởi động lại...");
+        console.log('Phát hiện kẹt tiến trình, khởi động lại');
         setIsCameraReady(false);
         setStreamKey(Date.now());
         setStep('CONNECTING');
@@ -161,11 +176,9 @@ function Capture() {
     return () => clearTimeout(emergencyTimer);
   }, [step]);
 
-  // ============================================================
-  // XỬ LÝ LỖI LIVE VIEW
-  // ============================================================
+  // Xử lý lỗi live view
   const handleImageError = () => {
-    console.log("Lỗi tải Live View, đang thử lại...");
+    console.log('Lỗi tải live view, thử lại sau 3 giây');
     setIsCameraReady(false);
 
     if (step !== 'COMPLETED' && step !== 'PROCESSING') {
@@ -178,9 +191,7 @@ function Capture() {
     }, 3000);
   };
 
-  // ============================================================
-  // ĐẾM NGƯỢC
-  // ============================================================
+  // Đếm ngược
   useEffect(() => {
     let timer;
     if (step === 'COUNTING' && count !== null && count > 0) {
@@ -191,27 +202,49 @@ function Capture() {
     return () => clearInterval(timer);
   }, [step, count]);
 
-  // ============================================================
-  // RENDER
-  // ============================================================
   return (
     <div className="kiosk-container" style={{ justifyContent: 'center' }}>
 
-      {/* Flash trắng */}
       {isFlashing && <div className="flash-overlay"></div>}
 
-      {/* Tiêu đề hướng dẫn */}
-      <div className="text-instruction" style={{ marginTop: '-2vh', marginBottom: '1vh', textAlign: 'center', width: '100%' }}>
+      {criticalError && (
+        <div style={{
+          position: 'fixed',
+          inset: 0,
+          backgroundColor: 'rgba(220, 38, 38, 0.95)',
+          color: 'white',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 99999,
+          padding: '2rem',
+          textAlign: 'center'
+        }}>
+          <h1 style={{ fontSize: '3rem', marginBottom: '1rem' }}>Lỗi Camera</h1>
+          <p style={{ fontSize: '1.5rem', marginBottom: '2rem' }}>{criticalError}</p>
+          <button
+            className="btn-primary"
+            onClick={() => {
+              setCriticalError(null);
+              navigate('/');
+            }}
+          >
+            Quay Về Trang Chủ
+          </button>
+        </div>
+      )}
+
+      <div style={{ marginTop: '-2vh', marginBottom: '1vh', textAlign: 'center', width: '100%' }}>
         <h1 style={{ fontSize: 'clamp(2rem, 4.5vh, 3.5rem)', color: '#0f172a', fontWeight: '800', margin: '0 0 0.5rem 0' }}>
-          {!isCameraReady && "ĐANG KẾT NỐI CAMERA..."}
-          {isCameraReady && step === 'CONNECTING' && "CHUẨN BỊ..."}
-          {isCameraReady && step === 'COUNTING' && `ĐANG CHỤP: KIỂU ${poseIndex} / ${totalPoses}`}
-          {isCameraReady && step === 'CAPTURING' && "CƯỜI LÊN NÀO!"}
-          {isCameraReady && step === 'PROCESSING' && "ĐANG XỬ LÝ VÀ RỬA ẢNH..."}
+          {!isCameraReady && "Đang kết nối camera..."}
+          {isCameraReady && step === 'CONNECTING' && "Chuẩn bị..."}
+          {isCameraReady && step === 'COUNTING' && `Đang chụp: Kiểu ${poseIndex} / ${totalPoses}`}
+          {isCameraReady && step === 'CAPTURING' && "Cười lên nào!"}
+          {isCameraReady && step === 'PROCESSING' && "Đang xử lý và rửa ảnh..."}
         </h1>
       </div>
 
-      {/* KHUNG LIVE VIEW */}
       <div
         style={{
           position: 'relative',
@@ -224,13 +257,13 @@ function Capture() {
           border: '6px solid white'
         }}
       >
-        {/* Luồng Camera 16:9 */}
+        {/* Live view */}
         <img
           src={liveViewUrl}
           alt="Live View"
           onLoad={() => {
             if (!isCameraReady) {
-              console.log('Đã nhận được luồng hình ảnh từ Camera!');
+              console.log('Đã nhận luồng hình ảnh từ camera');
               setIsCameraReady(true);
             }
           }}
@@ -243,9 +276,7 @@ function Capture() {
           }}
         />
 
-        {/* ============================================================ */}
-        {/* POSE GUIDE — Đặt vào VÙNG SÁNG (giữa 2 đường mask)          */}
-        {/* ============================================================ */}
+        {/* Pose guide khớp với vùng sáng */}
         {template?.guide_config?.enabled && poseGuideTransform && (
           <div
             style={{
@@ -276,9 +307,7 @@ function Capture() {
           </div>
         )}
 
-        {/* ============================================================ */}
-        {/* LỚP MASK LÀM MỜ 2 BÊN RÌA THỪA                              */}
-        {/* ============================================================ */}
+        {/* Mask 2 bên rìa thừa */}
         {sideMaskPercent > 0.5 && (
           <>
             <div style={{
@@ -309,7 +338,7 @@ function Capture() {
           </>
         )}
 
-        {/* Số đếm ngược khổng lồ */}
+        {/* Đếm ngược */}
         {step === 'COUNTING' && count !== null && !isFlashing && (
           <div
             style={{

@@ -24,7 +24,7 @@ function createWindow() {
       : `file://${path.join(__dirname, '../build/index.html')}`
   );
 
-  // ✅ Đồng bộ state khi cửa sổ vào/ra fullscreen
+  // Đồng bộ state khi cửa sổ vào/ra fullscreen
   const notifyWindowState = () => {
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.webContents.send('window-state-changed', {
@@ -36,7 +36,7 @@ function createWindow() {
   mainWindow.on('enter-full-screen', notifyWindowState);
   mainWindow.on('leave-full-screen', notifyWindowState);
 
-  // ✅ Restore từ taskbar → ép fullscreen lại
+  // Restore từ taskbar thì ép fullscreen lại
   mainWindow.on('restore', () => {
     setTimeout(() => {
       if (mainWindow && !mainWindow.isDestroyed()) {
@@ -45,13 +45,12 @@ function createWindow() {
     }, 100);
   });
 
-  // ✅ User bấm maximize của OS → ép fullscreen
+  // User bấm maximize của OS thì ép fullscreen
   mainWindow.on('maximize', () => {
     mainWindow.setFullScreen(true);
   });
 
-  // ✅ Nếu user cố thoát fullscreen (ESC, Win+Down) → ép lại
-  // (trừ khi đang toggle chủ động)
+  // Nếu user cố thoát fullscreen thì ép lại, trừ khi đang toggle
   mainWindow.on('leave-full-screen', () => {
     if (!isToggling) {
       setTimeout(() => {
@@ -72,9 +71,7 @@ function createWindow() {
 
 app.on('ready', createWindow);
 
-// =========================================================
-// 🎯 TOGGLE FULLSCREEN ↔ WINDOWED
-// =========================================================
+// Toggle fullscreen và windowed
 ipcMain.on('app:toggle-window', (event) => {
   const win = BrowserWindow.fromWebContents(event.sender);
   if (!win || win.isDestroyed()) return;
@@ -83,9 +80,7 @@ ipcMain.on('app:toggle-window', (event) => {
   isToggling = true;
 
   if (win.isFullScreen()) {
-    // ==========================================
-    // ĐANG FULL → THU NHỎ VỀ WINDOWED
-    // ==========================================
+    // Đang full: thu nhỏ về windowed
     const primaryDisplay = screen.getPrimaryDisplay();
     const { width: screenW, height: screenH } = primaryDisplay.workAreaSize;
 
@@ -97,12 +92,12 @@ ipcMain.on('app:toggle-window', (event) => {
     // Bước 1: Thoát fullscreen
     win.setFullScreen(false);
 
-    // Bước 2: Đợi Windows xử lý xong → unmaximize
+    // Bước 2: Đợi Windows xử lý xong rồi unmaximize
     setTimeout(() => {
       if (!win || win.isDestroyed()) return;
       win.unmaximize();
 
-      // Bước 3: Đợi thêm → setBounds (vị trí + kích thước trong 1 lệnh)
+      // Bước 3: Đợi thêm rồi setBounds (vị trí và kích thước trong 1 lệnh)
       setTimeout(() => {
         if (!win || win.isDestroyed()) return;
         win.setBounds({ x: winX, y: winY, width: winW, height: winH });
@@ -113,9 +108,7 @@ ipcMain.on('app:toggle-window', (event) => {
     }, 250);
 
   } else {
-    // ==========================================
-    // ĐANG WINDOWED → BẬT LẠI FULLSCREEN
-    // ==========================================
+    // Đang windowed: bật lại fullscreen
     win.setFullScreen(true);
 
     setTimeout(() => {

@@ -23,3 +23,16 @@ Thumbs.db
 # Bỏ qua các file thư viện DLL của Canon SDK
 *.dll
 EDSDK/
+
+repomix-output.xml
+
+# Environment variables (chứa secret keys)
+.env
+backend/.env
+
+# React env
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
