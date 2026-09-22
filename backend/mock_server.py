@@ -46,6 +46,7 @@ if not os.path.exists(TEMPLATES_FILE):
         json.dump([{
             "id": "tpl_default",
             "name": "Khung Mặc Định",
+            "hidden": False,
             "image_url": "http://127.0.0.1:8000/data/templates/tpl_default.png",
             "orientation": "portrait",
             "canvas_size": {"width": 1080, "height": 1920},
@@ -55,8 +56,10 @@ if not os.path.exists(TEMPLATES_FILE):
                 {"pose_index": 2, "x": 50, "y": 630, "width": 980, "height": 550, "rotation": 0},
                 {"pose_index": 3, "x": 50, "y": 1210, "width": 980, "height": 550, "rotation": 0}
             ],
-            "qr_config": {"print_on_photo": True, "x": 800, "y": 1780, "size": 120}
+            "qr_config": {"print_on_photo": True, "x": 800, "y": 1780, "size": 120},
+            "guide_config": {"enabled": False, "opacity": 0.4}
         }], f, ensure_ascii=False, indent=4)
+
 
 # =====================================================================
 # 2. BỘ GIẢ LẬP CAMERA / WEBCAM LIVE VIEW
@@ -66,15 +69,16 @@ class MockCameraEngine:
         self.latest_frame = None
         self.is_running = True
         self.is_frozen = False
+        # Cờ mô phỏng camera sẵn sàng (giống canon_cam.camera is not None)
+        self.is_connected = True
         self.cap = None
-        
+
         if cv2 is not None:
             # Thử mở camera với DirectShow trên Windows
             for index in [0, 1]:
                 try:
                     cap_test = cv2.VideoCapture(index, cv2.CAP_DSHOW)
                     if cap_test.isOpened():
-                        # Thiết lập độ phân giải 16:9 nét
                         cap_test.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
                         cap_test.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
                         self.cap = cap_test
@@ -99,16 +103,26 @@ class MockCameraEngine:
         """Mở lại luồng video chuyển động"""
         self.is_frozen = False
 
+    def _generate_dummy_frame(self):
+        """Tạo frame giả lập khi không có webcam"""
+        img = Image.new("RGB", (1280, 720), color=(30, 41, 59))
+        draw = ImageDraw.Draw(img)
+        draw.text((450, 340), f"MOCK LIVE VIEW\n{time.strftime('%H:%M:%S')}", fill=(255, 255, 255))
+        buf = io.BytesIO()
+        img.save(buf, format="JPEG", quality=80)
+        return buf.getvalue()
+
     def _worker(self):
         while self.is_running:
             try:
-                # Nếu không bị đóng băng thì mới cập nhật hình mới từ webcam
                 if not self.is_frozen:
-                    if self.cap and self.cap.isOpened():
+                    if self.cap and self.cap.isOpened() and cv2 is not None:
                         ret, frame = self.cap.read()
-                        if ret and cv2 is not None:
+                        if ret:
                             _, buffer = cv2.imencode('.jpg', frame)
                             self.latest_frame = buffer.tobytes()
+                        else:
+                            self.latest_frame = self._generate_dummy_frame()
                     else:
                         self.latest_frame = self._generate_dummy_frame()
             except Exception:
@@ -127,23 +141,38 @@ class MockCameraEngine:
         draw.text((750, 500), f"TEST POSE PHOTO\n{time.strftime('%H:%M:%S')}", fill=(255, 255, 255))
         img.save(save_path, "JPEG", quality=95)
 
+
 mock_cam = MockCameraEngine()
 
+
 # =====================================================================
-# 3. HÀM GHÉP ẢNH TEMPLATE THÀNH PHẨM
+# 3. HÀM MÔ PHỎNG PRE-FOCUS (giống pre_focus_camera của Canon)
+# =====================================================================
+def pre_focus_camera_mock():
+    """
+    Canon thật sẽ: tắt live view, bấm nửa cò, chờ AF khóa nét.
+    Mock chỉ cần chờ 0.15s để giống timing thực tế.
+    """
+    time.sleep(0.15)
+    print("🔍 [MOCK] Đã lấy nét (pre-focus)!")
+
+
+# =====================================================================
+# 4. HÀM GHÉP ẢNH TEMPLATE THÀNH PHẨM
 # =====================================================================
 def process_and_save_strip(session_id, session_raw_photos, template_id, session_dir):
+    # 1. Đọc cấu hình template
+    tpl_config = None
     try:
         with open(TEMPLATES_FILE, "r", encoding="utf-8") as f:
             templates = json.load(f)
-    except Exception:
-        templates = []
+        tpl_config = next((t for t in templates if t["id"] == template_id), None)
+        if not tpl_config and templates:
+            tpl_config = templates[0]
+    except Exception as e:
+        print(f"Lỗi đọc templates.json: {e}")
 
-    tpl_config = next((t for t in templates if t["id"] == template_id), None)
-    if not tpl_config and templates:
-        tpl_config = templates[0]
-
-    # Tìm file ảnh khung thực tế trên đĩa
+    # 2. Tìm file ảnh khung thực tế trên đĩa để lấy đúng kích thước thật
     actual_tpl_file = None
     for ext in ["png", "jpg", "jpeg"]:
         test_path = os.path.join(TEMPLATES_DIR, f"{template_id}.{ext}")
@@ -151,7 +180,7 @@ def process_and_save_strip(session_id, session_raw_photos, template_id, session_
             actual_tpl_file = test_path
             break
 
-    # Lấy kích thước chuẩn tuyệt đối từ file ảnh gốc
+    # 3. Xác định kích thước canvas chuẩn
     if actual_tpl_file:
         with Image.open(actual_tpl_file) as img_check:
             canvas_w, canvas_h = img_check.size
@@ -163,26 +192,31 @@ def process_and_save_strip(session_id, session_raw_photos, template_id, session_
 
     print(f"🖼️ [PROCESSING] Tạo Canvas đúng kích thước thực tế: {canvas_w}x{canvas_h}")
 
-    # 1. Tạo Canvas trong suốt hoặc trắng theo đúng size gốc
+    # 4. Tạo Canvas nền trắng
     strip_image = Image.new("RGBA", (canvas_w, canvas_h), color=(255, 255, 255, 255))
 
-    # 2. Dán các ảnh chụp vào ô
+    # 5. Dán các ảnh chụp vào ô
     if tpl_config and "slots" in tpl_config:
         for i, photo_path in enumerate(session_raw_photos):
             if i < len(tpl_config["slots"]):
                 slot = tpl_config["slots"][i]
                 try:
-                    img = Image.open(photo_path).convert("RGBA")
-                    target_size = (slot["width"], slot["height"])
-                    # Giữ nguyên tỷ lệ góc nhìn người, không kéo dãn
-                    img_fitted = ImageOps.fit(img, target_size, method=Image.Resampling.LANCZOS, centering=(0.5, 0.5))
-                    if slot.get("rotation", 0) != 0:
-                        img_fitted = img_fitted.rotate(slot["rotation"], expand=True)
-                    strip_image.paste(img_fitted, (slot["x"], slot["y"]))
+                    if os.path.exists(photo_path):
+                        img = Image.open(photo_path).convert("RGBA")
+                        target_size = (slot["width"], slot["height"])
+                        # Giữ nguyên tỷ lệ, crop giữa không méo
+                        img_fitted = ImageOps.fit(
+                            img, target_size,
+                            method=Image.Resampling.LANCZOS,
+                            centering=(0.5, 0.5)
+                        )
+                        if slot.get("rotation", 0) != 0:
+                            img_fitted = img_fitted.rotate(slot["rotation"], expand=True)
+                        strip_image.paste(img_fitted, (slot["x"], slot["y"]))
                 except Exception as e:
-                    print(f"Lỗi dán ảnh slot {i}: {e}")
+                    print(f"Lỗi dán slot {i}: {e}")
 
-    # 3. Phủ khung viền đồ họa lên trên
+    # 6. Phủ khung viền đồ họa lên trên
     if actual_tpl_file:
         try:
             tpl_img = Image.open(actual_tpl_file).convert("RGBA")
@@ -192,7 +226,31 @@ def process_and_save_strip(session_id, session_raw_photos, template_id, session_
         except Exception as e:
             print(f"Lỗi dán viền khung: {e}")
 
-    # 4. Xuất file ảnh thành phẩm
+    # 7. ĐÓNG DẤU MÃ QR
+    qr_conf = tpl_config.get("qr_config", {}) if tpl_config else {}
+    if qr_conf.get("print_on_photo", True):
+        try:
+            download_url = f"http://127.0.0.1:3000/download/{session_id}"
+            qr = qrcode.QRCode(version=1, box_size=10, border=1)
+            qr.add_data(download_url)
+            qr.make(fit=True)
+            qr_img = qr.make_image(fill_color="black", back_color="white").convert("RGBA")
+
+            qr_size = qr_conf.get("size", 150)
+            qr_img = qr_img.resize((qr_size, qr_size))
+
+            qr_x = qr_conf.get("x", canvas_w - qr_size - 30)
+            qr_y = qr_conf.get("y", canvas_h - qr_size - 30)
+
+            # Đảm bảo QR không vượt ra ngoài canvas
+            qr_x = max(0, min(qr_x, canvas_w - qr_size))
+            qr_y = max(0, min(qr_y, canvas_h - qr_size))
+
+            strip_image.paste(qr_img, (qr_x, qr_y), qr_img)
+        except Exception as e:
+            print(f"Lỗi tạo QR: {e}")
+
+    # 8. Xuất file ảnh thành phẩm (cloud + print export)
     cloud_save_path = os.path.join(session_dir, "final_photobooth_strip.jpg")
     print_save_path = os.path.join(PRINT_EXPORT_DIR, f"print_{session_id}.jpg")
 
@@ -201,8 +259,9 @@ def process_and_save_strip(session_id, session_raw_photos, template_id, session_
     final_rgb.save(print_save_path, "JPEG", quality=95)
     return cloud_save_path
 
+
 # =====================================================================
-# 4. KHỞI TẠO FASTAPI APP VÀ ROUTES
+# 5. KHỞI TẠO FASTAPI APP VÀ ROUTES
 # =====================================================================
 app = FastAPI(title="Photobooth Mock Server")
 
@@ -216,10 +275,13 @@ app.add_middleware(
 
 app.mount("/data", StaticFiles(directory=BASE_SAVE_DIR), name="data")
 
+
+# ------------------------- SETTINGS -------------------------
 @app.get("/api/settings")
 def get_settings():
     with open(SETTINGS_FILE, "r", encoding="utf-8") as f:
         return json.load(f)
+
 
 @app.post("/api/settings")
 def update_settings(new_settings: dict):
@@ -227,34 +289,34 @@ def update_settings(new_settings: dict):
         json.dump(new_settings, f, ensure_ascii=False, indent=4)
     return {"status": "success"}
 
+
+# ------------------------- TEMPLATES -------------------------
 @app.get("/api/templates")
 def get_templates():
     with open(TEMPLATES_FILE, "r", encoding="utf-8") as f:
         return json.load(f)
 
+
 @app.post("/api/templates/upload")
 async def upload_template(name: str = Form(...), file: UploadFile = File(...)):
     with open(TEMPLATES_FILE, "r", encoding="utf-8") as f:
         templates = json.load(f)
-        
+
     new_id = f"tpl_{int(time.time())}"
-    # Giữ nguyên phần mở rộng png hoặc jpg
     ext = file.filename.split(".")[-1].lower() if "." in file.filename else "png"
     new_filename = f"{new_id}.{ext}"
     file_location = os.path.join(TEMPLATES_DIR, new_filename)
-    
+
     file_bytes = await file.read()
     with open(file_location, "wb") as buffer:
         buffer.write(file_bytes)
-        
+
     # TỰ ĐỘNG ĐO KÍCH THƯỚC THỰC CỦA ẢNH KHUNG
     with Image.open(io.BytesIO(file_bytes)) as img:
         real_width, real_height = img.size
 
-    # Tự động tạo 4 slot mẫu chuẩn theo tỷ lệ khung vừa upload
-    # (Với khung 880x2650, mỗi slot sẽ cao khoảng 480px)
     slot_w = int(real_width * 0.85)
-    slot_h = int(slot_w * (9 / 16)) # Tỷ lệ chụp 16:9 ngang
+    slot_h = int(slot_w * (9 / 16))
     slot_x = int((real_width - slot_w) / 2)
     start_y = int(real_height * 0.12)
     gap_y = int(slot_h * 1.1)
@@ -262,6 +324,7 @@ async def upload_template(name: str = Form(...), file: UploadFile = File(...)):
     new_tpl = {
         "id": new_id,
         "name": name,
+        "hidden": False,
         "image_url": f"http://127.0.0.1:8000/data/templates/{new_filename}",
         "orientation": "portrait" if real_height > real_width else "landscape",
         "canvas_size": {"width": real_width, "height": real_height},
@@ -272,14 +335,77 @@ async def upload_template(name: str = Form(...), file: UploadFile = File(...)):
             {"pose_index": 3, "x": slot_x, "y": start_y + gap_y * 2, "width": slot_w, "height": slot_h, "rotation": 0},
             {"pose_index": 4, "x": slot_x, "y": start_y + gap_y * 3, "width": slot_w, "height": slot_h, "rotation": 0}
         ],
-        "qr_config": {"print_on_photo": True, "x": int(real_width - 160), "y": int(real_height - 180), "size": 130}
+        "qr_config": {"print_on_photo": True, "x": int(real_width - 160), "y": int(real_height - 180), "size": 130},
+        "guide_config": {"enabled": False, "opacity": 0.4}
     }
-    
+
     templates.append(new_tpl)
     with open(TEMPLATES_FILE, "w", encoding="utf-8") as f:
         json.dump(templates, f, ensure_ascii=False, indent=4)
-        
+
     return {"status": "success", "template": new_tpl}
+
+
+@app.put("/api/templates/{tpl_id}")
+async def update_template(tpl_id: str, request: Request):
+    updated_data = await request.json()
+    with open(TEMPLATES_FILE, "r", encoding="utf-8") as f:
+        templates = json.load(f)
+
+    for i, tpl in enumerate(templates):
+        if tpl["id"] == tpl_id:
+            templates[i] = updated_data
+            break
+
+    with open(TEMPLATES_FILE, "w", encoding="utf-8") as f:
+        json.dump(templates, f, ensure_ascii=False, indent=4)
+
+    return {"status": "success"}
+
+
+@app.delete("/api/templates/{tpl_id}")
+async def delete_template(tpl_id: str):
+    with open(TEMPLATES_FILE, "r", encoding="utf-8") as f:
+        templates = json.load(f)
+
+    new_templates = [tpl for tpl in templates if tpl["id"] != tpl_id]
+
+    with open(TEMPLATES_FILE, "w", encoding="utf-8") as f:
+        json.dump(new_templates, f, ensure_ascii=False, indent=4)
+
+    # Xóa file ảnh liên quan (hỗ trợ png, jpg, jpeg)
+    for ext in ["png", "jpg", "jpeg"]:
+        file_path = os.path.join(TEMPLATES_DIR, f"{tpl_id}.{ext}")
+        if os.path.exists(file_path):
+            os.remove(file_path)
+
+    return {"status": "success"}
+
+
+# ------------------------- BACKGROUND -------------------------
+@app.post("/api/upload-background")
+async def upload_background(file: UploadFile = File(...)):
+    bg_path = os.path.join(BASE_SAVE_DIR, "app_background.jpg")
+    with open(bg_path, "wb") as buffer:
+        shutil.copyfileobj(file.file, buffer)
+    # Gắn timestamp để trình duyệt không cache ảnh cũ
+    return {"url": f"http://127.0.0.1:8000/data/app_background.jpg?t={int(time.time())}"}
+
+
+# ------------------------- LIVE VIEW API -------------------------
+@app.post("/api/camera/live-view/start")
+async def start_admin_live_view():
+    """Bật live view - trong mock chỉ cần unfreeze."""
+    mock_cam.unfreeze()
+    return {"status": "started"}
+
+
+@app.post("/api/camera/live-view/stop")
+async def stop_admin_live_view():
+    """Tắt live view - trong mock chỉ cần freeze."""
+    mock_cam.freeze()
+    return {"status": "stopped"}
+
 
 @app.get("/api/liveview")
 def video_stream():
@@ -291,58 +417,6 @@ def video_stream():
             time.sleep(0.04)
     return StreamingResponse(generate(), media_type="multipart/x-mixed-replace; boundary=frame")
 
-# =====================================================================
-# API SỬA THÔNG TIN KHUNG (Cập nhật tọa độ x, y, width, height...)
-# =====================================================================
-@app.put("/api/templates/{tpl_id}")
-async def update_template(tpl_id: str, request: Request):
-    updated_data = await request.json()
-    with open(TEMPLATES_FILE, "r", encoding="utf-8") as f:
-        templates = json.load(f)
-        
-    for i, tpl in enumerate(templates):
-        if tpl["id"] == tpl_id:
-            templates[i] = updated_data
-            break
-            
-    with open(TEMPLATES_FILE, "w", encoding="utf-8") as f:
-        json.dump(templates, f, ensure_ascii=False, indent=4)
-        
-    return {"status": "success"}
-
-@app.delete("/api/templates/{tpl_id}")
-async def delete_template(tpl_id: str):
-    # 1. Đọc dữ liệu JSON hiện tại
-    with open(TEMPLATES_FILE, "r", encoding="utf-8") as f:
-        templates = json.load(f)
-        
-    # 2. Lọc bỏ khung cần xóa
-    new_templates = [tpl for tpl in templates if tpl["id"] != tpl_id]
-            
-    # 3. Lưu lại JSON
-    with open(TEMPLATES_FILE, "w", encoding="utf-8") as f:
-        json.dump(new_templates, f, ensure_ascii=False, indent=4)
-        
-    # 4. Quét và xóa file ảnh liên quan (hỗ trợ png, jpg, jpeg)
-    for ext in ["png", "jpg", "jpeg"]:
-        file_path = os.path.join(TEMPLATES_DIR, f"{tpl_id}.{ext}")
-        if os.path.exists(file_path):
-            os.remove(file_path)
-            
-    return {"status": "success"}
-
-# =====================================================================
-# 5. API để nhận và lưu file hình nền Kiosk
-# =====================================================================
-@app.post("/api/upload-background")
-async def upload_background(file: UploadFile = File(...)):
-    # Lưu đè file ảnh nền vào thư mục data
-    bg_path = os.path.join(BASE_SAVE_DIR, "app_background.jpg")
-    with open(bg_path, "wb") as buffer:
-        shutil.copyfileobj(file.file, buffer)
-    
-    # Trả về URL có gắn timestamp (?t=...) để trình duyệt không bị lưu cache ảnh cũ
-    return {"url": f"http://127.0.0.1:8000/data/app_background.jpg?t={int(time.time())}"}
 
 # =====================================================================
 # 6. WEBSOCKET ĐIỀU PHỐI ĐẾM NGƯỢC & CHỤP
@@ -362,22 +436,43 @@ async def ws_session(websocket: WebSocket):
                 template_id = data.get("template_id", "tpl_default")
                 session_id = data.get("session_id", f"session_{int(time.time())}")
 
-                # Đọc số kiểu ảnh và countdown
-                with open(TEMPLATES_FILE, "r", encoding="utf-8") as f:
-                    templates = json.load(f)
-                tpl = next((t for t in templates if t["id"] == template_id), None)
-                num_poses = tpl.get("num_poses", len(tpl.get("slots", []))) if tpl else 3
+                # 1. Đọc thông tin template
+                try:
+                    with open(TEMPLATES_FILE, "r", encoding="utf-8") as f:
+                        templates = json.load(f)
+                    tpl = next((t for t in templates if t["id"] == template_id), None)
+                    if not tpl and templates:
+                        tpl = templates[0]
+                    num_poses = tpl.get("num_poses", len(tpl.get("slots", []))) if tpl else 3
+                except Exception:
+                    num_poses = 3
 
-                with open(SETTINGS_FILE, "r", encoding="utf-8") as f:
-                    settings = json.load(f)
-                countdown = settings.get("countdown_capture", 3)
+                # 2. Đọc countdown từ settings
+                try:
+                    with open(SETTINGS_FILE, "r", encoding="utf-8") as f:
+                        settings = json.load(f)
+                    countdown = settings.get("countdown_capture", 3)
+                except Exception:
+                    countdown = 3
 
                 session_dir = os.path.join(BASE_SAVE_DIR, "sessions", session_id)
                 os.makedirs(session_dir, exist_ok=True)
                 session_raw_photos.clear()
 
+                session_failed = False
+
+                # 3. Vòng lặp chụp động theo num_poses
                 for pose in range(1, num_poses + 1):
-                    # Đang đếm 3.. 2.. 1.. -> Video vẫn chuyển động bình thường
+                    # --- KIỂM TRA PHẦN CỨNG TRƯỚC KHI ĐẾM NGƯỢC ---
+                    if not mock_cam.is_connected:
+                        await websocket.send_json({
+                            "event": "CRITICAL_ERROR",
+                            "message": "Mất kết nối máy ảnh. Vui lòng kiểm tra cáp USB hoặc pin!"
+                        })
+                        session_failed = True
+                        break
+
+                    # Báo React bắt đầu đếm ngược
                     await websocket.send_json({
                         "event": "START_COUNTDOWN",
                         "current_pose": pose,
@@ -385,41 +480,56 @@ async def ws_session(websocket: WebSocket):
                         "countdown": countdown
                     })
 
+                    # Chờ hết countdown (UI đang đếm số)
                     if countdown > 0:
                         await asyncio.sleep(countdown)
 
-                    # KHOẢNH KHẮC SMILE (0s): ĐÓNG BĂNG FRAME HÌNH NGAY LẬP TỨC
+                    # --- KHOẢNH KHẮC SMILE (0s): ĐÓNG BĂNG FRAME ---
                     print(f"[{pose}/{num_poses}] Chốt dáng (Smile) - Đóng băng Live View...")
-                    mock_cam.freeze() 
-                    await asyncio.sleep(0.8)  # Đứng hình 0.8s tạo hiệu ứng chốt dáng cực đã mắt
+                    mock_cam.freeze()
+                    await asyncio.sleep(0.8)  # Đứng hình 0.8s tạo hiệu ứng chốt dáng
 
-                    # Báo Flash và chụp
-                    print(f"📸 Chụp kiểu {pose}/{num_poses}...")
+                    # --- GỌI PRE-FOCUS ---
+                    print(f"[{pose}/{num_poses}] Đang lấy nét (Smile!)...")
+                    await asyncio.to_thread(pre_focus_camera_mock)
+
+                    # --- FLASH + CHỤP ---
+                    print(f"📸 Đang ra lệnh CHỤP lút cò kiểu số {pose}/{num_poses}...")
                     await websocket.send_json({"event": "TRIGGER_FLASH"})
 
                     photo_path = os.path.join(session_dir, f"pose_{pose}.jpg")
-                    mock_cam.capture_photo(photo_path)
+                    await asyncio.to_thread(mock_cam.capture_photo, photo_path)
                     session_raw_photos.append(photo_path)
 
                     # Nghỉ 1s rồi MỞ LẠI LIVE VIEW cho kiểu tiếp theo
                     await asyncio.sleep(1)
                     mock_cam.unfreeze()
 
-                # Ghép ảnh thành phẩm
-                await websocket.send_json({"event": "PROCESSING"})
-                await asyncio.to_thread(process_and_save_strip, session_id, session_raw_photos, template_id, session_dir)
+                # 4. Chụp xong -> Ghép ảnh theo Template
+                if not session_failed:
+                    await websocket.send_json({"event": "PROCESSING"})
+                    await asyncio.to_thread(
+                        process_and_save_strip,
+                        session_id,
+                        session_raw_photos,
+                        template_id,
+                        session_dir
+                    )
 
-                # Hoàn tất
-                await websocket.send_json({
-                    "event": "COMPLETED",
-                    "final_image_url": f"http://127.0.0.1:8000/data/sessions/{session_id}/final_photobooth_strip.jpg"
-                })
+                    # 5. Báo hoàn tất để chuyển sang màn hình QR / Review
+                    await websocket.send_json({
+                        "event": "COMPLETED",
+                        "final_image_url": f"http://127.0.0.1:8000/data/sessions/{session_id}/final_photobooth_strip.jpg"
+                    })
 
     except WebSocketDisconnect:
         print("❌ Kiosk đã ngắt kết nối WebSocket.")
+    except Exception as e:
+        print(f"Lỗi phiên chụp: {e}")
+
 
 # =====================================================================
-# 6. ĐIỂM CHẠY TRỰC TIẾP
+# 7. ĐIỂM CHẠY TRỰC TIẾP
 # =====================================================================
 if __name__ == "__main__":
     print("=" * 60)
