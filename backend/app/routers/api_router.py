@@ -30,12 +30,14 @@ if not os.path.exists(TEMPLATES_FILE):
         json.dump([{
             "id": "tpl_default",
             "name": "Khung Mac Dinh",
+            "hidden": False,
             "image_url": "http://127.0.0.1:8000/data/templates/tpl_default.png",
             "orientation": "landscape",
             "canvas_size": {"width": 1920, "height": 1080},
             "num_poses": 1,
             "slots": [{"pose_index": 1, "x": 100, "y": 100, "width": 800, "height": 600, "rotation": 0}],
-            "qr_config": {"print_on_photo": True, "x": 1500, "y": 700, "size": 250}
+            "qr_config": {"print_on_photo": True, "x": 1500, "y": 700, "size": 250},
+            "guide_config": {"enabled": False, "opacity": 0.4}
         }], f)
 
 @router.get("/settings")
@@ -88,6 +90,7 @@ async def upload_template(name: str = Form(...), file: UploadFile = File(...)):
     new_template = {
         "id": new_id,
         "name": name,
+        "hidden": False,
         "image_url": f"http://127.0.0.1:8000/data/templates/{new_filename}",
         "orientation": "portrait" if real_height > real_width else "landscape",
         "canvas_size": {"width": real_width, "height": real_height},
@@ -98,7 +101,8 @@ async def upload_template(name: str = Form(...), file: UploadFile = File(...)):
             {"pose_index": 3, "x": slot_x, "y": start_y + gap_y * 2, "width": slot_w, "height": slot_h, "rotation": 0},
             {"pose_index": 4, "x": slot_x, "y": start_y + gap_y * 3, "width": slot_w, "height": slot_h, "rotation": 0}
         ],
-        "qr_config": {"print_on_photo": True, "x": int(real_width - 160), "y": int(real_height - 180), "size": 130}
+        "qr_config": {"print_on_photo": True, "x": int(real_width - 160), "y": int(real_height - 180), "size": 130},
+        "guide_config": {"enabled": False, "opacity": 0.4}
     }
     templates.append(new_template)
     
@@ -133,6 +137,15 @@ async def upload_background(file: UploadFile = File(...)):
     # Trả về URL có gắn timestamp (?t=...) để trình duyệt không bị lưu cache ảnh cũ
     return {"url": f"http://127.0.0.1:8000/data/app_background.jpg?t={int(time.time())}"}
 
+@router.post("/camera/live-view/start")
+async def start_admin_live_view():
+    canon_cam.start_live_view_thread()
+    return {"status": "started"}
+
+@router.post("/camera/live-view/stop")
+async def stop_admin_live_view():
+    canon_cam.stop_live_view_thread()
+    return {"status": "stopped"}
 
 @router.get("/liveview")
 def video_stream():
@@ -146,7 +159,7 @@ def video_stream():
     return StreamingResponse(generate_frames(), media_type="multipart/x-mixed-replace; boundary=frame")
 
 # ==========================================================
-# CẬP NHẬT: Quét dọn sạch sẽ file ảnh (kể cả jpg, png)
+# Xóa template + file ảnh liên quan
 # ==========================================================
 @router.delete("/templates/{tpl_id}")
 async def delete_template(tpl_id: str):
