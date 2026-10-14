@@ -9,7 +9,7 @@ Mở frontend như bình thường bằng `npm.cmd start` ở thư mục dự á
 Ảnh giả lập chỉ dùng cho camera khi kiểm tra. Để mô phỏng HFP trong môi trường phát triển, chạy `python mock_hfp.py`; script này không được chạy cùng DNP HFP vì nó sẽ chuyển file in sang `ptb_data/mock_printed`.
 
 - Admin lưu cấu hình tại `ptb_data/config/settings.json`. Các thay đổi riêng lẻ giữ nguyên các khóa khác.
-- Hot Folder là `ptb_data/hot_folder`; model mặc định là `RX1HS`. Với DNP HFP 3.x, đặt Hot Folder là thư mục `Prints`; mỗi lệnh in được gửi vào `<Hot Folder>/<print_format>/<printer_model>`, ví dụ `Prints/s4x6/RX1HS`.
+- Hot Folder là `ptb_data/hot_folder`; model mặc định là `RX1HS`. Với DNP HFP 3.x, đặt Hot Folder là thư mục `Prints`; mỗi lệnh in được gửi vào `<Hot Folder>/<print_format>/<printer_model>`, ví dụ `Prints/s4x6/RX1HS`. Format `s6x2_2` nhận từng file 2x6 độc lập ở kích thước 600x1800 px, HFP sẽ ghép hai job lên một tờ 4x6 rồi cắt; không đưa file 1200x1800 vào queue này.
 - Khi bật Review, khách có một lần chụp lại. Auto-Print ẩn bộ chọn số lượng và nút in; gửi một bản khi khách tiếp tục hoặc hết thời gian Review. Khi tắt Review, Capture gửi lệnh Auto-Print trực tiếp.
 - Khi Auto-Print tắt, khách bấm In ảnh ở Review để in 1–4 bản. Tiếp tục không in vẫn cho phép nhận QR. Màn kết thúc chỉ báo đang in khi API đã nhận lệnh.
 - Phiên mới có mã `YYMMDD-HHMMSS`. File Hot Folder dùng `<session_id>.jpg`; các bản in thêm dùng `<session_id>_2.jpg`, `<session_id>_3.jpg`.

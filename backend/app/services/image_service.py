@@ -43,6 +43,7 @@ except ImportError:
 _s3_client = None
 _SAFE_SEGMENT = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")
 _HFP_4X6_JOB_SIZE = (1200, 1800)
+_HFP_2X6_JOB_SIZE = (600, 1800)
 
 
 def cloud_prefix(session_id: str) -> str:
@@ -73,19 +74,25 @@ def get_hot_folder_dir(settings: dict | None = None) -> Path:
 def _write_hfp_job(source: Path, destination: Path, print_format: str) -> None:
     """Write a DNP-compatible print file without altering the kiosk original.
 
-    HFP's ``s4x6`` and ``s6x2_2`` queues both consume one 4x6 sheet.  The
-    latter is cut into two 2x6 strips by the printer, so it has the same input
-    dimensions.  User-uploaded templates may be preview-sized and use a
-    different aspect ratio; letterbox them instead of cropping the frame.
+    HFP's ``s4x6`` queue takes one 4x6 image. Its ``s6x2_2`` queue receives
+    individual 2x6 strips and pairs two jobs on one 4x6 sheet before cutting.
+    Supplying a padded 4x6 canvas to ``s6x2_2`` makes HFP cut each strip in
+    half, which produces the white margins and split images seen in print.
+    User-uploaded templates may be preview-sized, so letterbox rather than
+    crop the frame.
     """
-    if print_format not in {"s4x6", "s6x2_2"}:
+    if print_format == "s4x6":
+        output_size = _HFP_4X6_JOB_SIZE
+    elif print_format == "s6x2_2":
+        output_size = _HFP_2X6_JOB_SIZE
+    else:
         shutil.copy2(source, destination)
         return
 
     with Image.open(source) as original:
         image = ImageOps.exif_transpose(original).convert("RGB")
-        fitted = ImageOps.contain(image, _HFP_4X6_JOB_SIZE, method=Image.Resampling.LANCZOS)
-        canvas = Image.new("RGB", _HFP_4X6_JOB_SIZE, "white")
+        fitted = ImageOps.contain(image, output_size, method=Image.Resampling.LANCZOS)
+        canvas = Image.new("RGB", output_size, "white")
         offset = ((canvas.width - fitted.width) // 2, (canvas.height - fitted.height) // 2)
         canvas.paste(fitted, offset)
         canvas.save(destination, "JPEG", quality=95, dpi=(300, 300))

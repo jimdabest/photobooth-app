@@ -79,6 +79,20 @@ class CentralizedFileWorkflowTests(unittest.TestCase):
                 self.assertEqual(print_job.mode, "RGB")
                 self.assertEqual(tuple(round(value) for value in print_job.info["dpi"]), (300, 300))
 
+    def test_2x6_job_is_native_strip_without_4x6_padding(self):
+        session_id = "session-2x6"
+        source = self.final_dir / f"{session_id}.jpg"
+        Image.new("RGB", (880, 2650), "blue").save(source)
+        self._save_settings(printer_model="RX1HS", max_print_copies=1)
+
+        [file_name] = image_service.send_to_hot_folder(session_id, "s6x2_2", 1)
+
+        with Image.open(file_name) as print_job:
+            self.assertEqual(print_job.size, (600, 1800))
+            self.assertEqual(print_job.mode, "RGB")
+            self.assertEqual(tuple(round(value) for value in print_job.info["dpi"]), (300, 300))
+            self.assertLessEqual(print_job.getpixel((10, 900))[0], 10)
+
     def test_composition_keeps_final_and_removes_raw_after_offline_queueing(self):
         session_id = "session-b"
         raw_dir = self.session_dir / session_id
