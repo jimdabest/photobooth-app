@@ -234,6 +234,16 @@ def _cleanup_session_raw_files(session_id: str, settings: dict) -> None:
         shutil.rmtree(session_dir)
 
 
+def _queue_web_images(session_id: str, web_image: Path, web_poses: list[Path]) -> Path:
+    """Persist optimized files before a retryable R2 synchronization."""
+    OFFLINE_QUEUE_DIR.mkdir(parents=True, exist_ok=True)
+    queued_image = OFFLINE_QUEUE_DIR / f"{session_id}.jpg"
+    shutil.copy2(web_image, queued_image)
+    for pose_path in web_poses:
+        shutil.copy2(pose_path, OFFLINE_QUEUE_DIR / f"{session_id}_{pose_path.name}")
+    return queued_image
+
+
 def finalize_session(session_id: str) -> dict[str, object]:
     """Create web images for the final and poses, then upload or queue all of them."""
     source = final_image_path(session_id)
@@ -249,10 +259,7 @@ def finalize_session(session_id: str) -> dict[str, object]:
         ]
 
         if settings["offline_mode"]:
-            queued_image = OFFLINE_QUEUE_DIR / f"{session_id}.jpg"
-            shutil.copy2(web_image, queued_image)
-            for pose_path in web_poses:
-                shutil.copy2(pose_path, OFFLINE_QUEUE_DIR / f"{session_id}_{pose_path.name}")
+            queued_image = _queue_web_images(session_id, web_image, web_poses)
             _cleanup_session_raw_files(session_id, settings)
             return {
                 "session_url": get_session_url(session_id),
@@ -261,15 +268,28 @@ def finalize_session(session_id: str) -> dict[str, object]:
                 "pose_count": len(web_poses),
             }
 
-        result = upload_final_image_to_r2(session_id, web_image, web_poses)
-        if result["final"]:
+        try:
+            result = upload_final_image_to_r2(session_id, web_image, web_poses)
+            if not result.get("final"):
+                raise RuntimeError("R2 không trả về URL ảnh sau khi upload")
             _cleanup_session_raw_files(session_id, settings)
-        return {
-            "session_url": get_session_url(session_id),
-            "queue_file": "",
-            "cloud_url": result["final"],
-            "pose_count": len(web_poses),
-        }
+            return {
+                "session_url": get_session_url(session_id),
+                "queue_file": "",
+                "cloud_url": result["final"],
+                "pose_count": len(web_poses),
+            }
+        except Exception as exc:
+            print(f"[FINALIZE] Upload R2 thất bại, đưa vào queue: {exc}")
+            queued_image = _queue_web_images(session_id, web_image, web_poses)
+            _cleanup_session_raw_files(session_id, settings)
+            return {
+                "session_url": get_session_url(session_id),
+                "queue_file": str(queued_image),
+                "cloud_url": "",
+                "pose_count": len(web_poses),
+                "fallback": True,
+            }
 
 
 def process_and_save_strip(session_id: str, raw_photo_paths: list[str], template_id: str) -> Path:

@@ -20,6 +20,6 @@ Mở frontend như bình thường bằng `npm.cmd start` ở thư mục dự á
 - Script đồng bộ có sẵn: `python sync_offline_queue.py --dry-run` để xem queue, `python sync_offline_queue.py` để upload tất cả phiên pending/failed, hoặc `python sync_offline_queue.py --session <session_id>` để upload một phiên. Script không xóa ảnh cục bộ; chỉ dùng `--force` khi cần upload lại phiên đã hoàn tất.
 - Bản chất lượng in trong `backend/prints/export` không bị nén lại. Chất lượng JPEG web mặc định 82, rộng tối đa 1920; dung lượng phụ thuộc nội dung ảnh.
 
-BackgroundTasks chạy trong tiến trình backend. Giữ backend hoạt động cho đến khi tác vụ nền hoàn tất; đây không phải hàng đợi công việc bền vững qua mất điện.
+Khi upload R2 đang bật nhưng gặp lỗi mạng hoặc lỗi dịch vụ, `finalize_session` ghi ảnh web đã nén và các pose vào `ptb_data/offline_queue` trước khi kết thúc. Chạy `python sync_offline_queue.py` khi kết nối đã ổn định để tải lại các phiên này lên R2. `BackgroundTasks` vẫn cần backend tiếp tục chạy cho đến khi tác vụ hoàn tất; cơ chế queue bảo vệ ảnh sau một lỗi upload, không thay thế nguồn điện ổn định.
 
 Kiểm tra không cần camera hoặc máy in: `python -m unittest discover -s tests -v`.

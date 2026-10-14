@@ -154,6 +154,23 @@ class CentralizedFileWorkflowTests(unittest.TestCase):
         self.assertEqual(upload.call_args.args[2][0].name, "pose_1.jpg")
         self.assertFalse(raw_dir.exists())
 
+    def test_online_finalization_queues_images_when_r2_upload_fails(self):
+        session_id = "session-r2-fallback"
+        Image.new("RGB", (2400, 1200), "red").save(self.final_dir / f"{session_id}.jpg")
+        raw_dir = self.session_dir / session_id
+        raw_dir.mkdir()
+        Image.new("RGB", (2400, 1200), "blue").save(raw_dir / "pose_1.jpg")
+        self._save_settings(offline_mode=False)
+
+        with patch.object(image_service, "upload_final_image_to_r2", side_effect=OSError("R2 unavailable")):
+            result = image_service.finalize_session(session_id)
+
+        self.assertTrue(result["fallback"])
+        self.assertEqual(Path(result["queue_file"]), self.offline_queue / f"{session_id}.jpg")
+        self.assertTrue((self.offline_queue / f"{session_id}.jpg").is_file())
+        self.assertTrue((self.offline_queue / f"{session_id}_pose_1.jpg").is_file())
+        self.assertFalse(raw_dir.exists())
+
     def test_offline_sync_uploads_and_removes_queue_file(self):
         session_id = "session-e"
         queued = self.offline_queue / f"{session_id}.jpg"
