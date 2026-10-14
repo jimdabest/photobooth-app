@@ -74,16 +74,16 @@ def get_hot_folder_dir(settings: dict | None = None) -> Path:
 def _write_hfp_job(source: Path, destination: Path, print_format: str) -> None:
     """Write a DNP-compatible print file without altering the kiosk original.
 
-    HFP's ``s4x6`` queue takes one 4x6 image. Its ``s6x2_2`` queue receives
-    individual 2x6 strips and pairs two jobs on one 4x6 sheet before cutting.
-    Supplying a padded 4x6 canvas to ``s6x2_2`` makes HFP cut each strip in
-    half, which produces the white margins and split images seen in print.
+    HFP's ``s4x6`` queue takes one 4x6 image. A kiosk 2x6 template must go
+    to ``s2x6`` as one native strip. ``s6x2_2`` is HFP's two-up batching
+    queue and can put two customers on one sheet, so it is migrated to
+    ``s2x6`` by settings_service before jobs are created.
     User-uploaded templates may be preview-sized, so letterbox rather than
     crop the frame.
     """
     if print_format == "s4x6":
         output_size = _HFP_4X6_JOB_SIZE
-    elif print_format == "s6x2_2":
+    elif print_format == "s2x6":
         output_size = _HFP_2X6_JOB_SIZE
     else:
         shutil.copy2(source, destination)

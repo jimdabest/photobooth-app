@@ -59,7 +59,7 @@ class CentralizedFileWorkflowTests(unittest.TestCase):
         self.assertTrue(settings["enable_retake"])
         self.assertEqual(settings["qr_timeout"], 15)
         self.assertEqual(settings["hot_folder_dir"], "ptb_data/hot_folder")
-        self.assertEqual([template["print_format"] for template in settings["templates"]], ["s4x6", "s6x2_2"])
+        self.assertEqual([template["print_format"] for template in settings["templates"]], ["s4x6", "s2x6"])
 
     def test_print_routing_clamps_copies_and_uses_independent_job_names(self):
         session_id = "session-a"
@@ -85,13 +85,22 @@ class CentralizedFileWorkflowTests(unittest.TestCase):
         Image.new("RGB", (880, 2650), "blue").save(source)
         self._save_settings(printer_model="RX1HS", max_print_copies=1)
 
-        [file_name] = image_service.send_to_hot_folder(session_id, "s6x2_2", 1)
+        [file_name] = image_service.send_to_hot_folder(session_id, "s2x6", 1)
 
         with Image.open(file_name) as print_job:
             self.assertEqual(print_job.size, (600, 1800))
             self.assertEqual(print_job.mode, "RGB")
             self.assertEqual(tuple(round(value) for value in print_job.info["dpi"]), (300, 300))
             self.assertLessEqual(print_job.getpixel((10, 900))[0], 10)
+
+    def test_legacy_two_up_format_migrates_to_single_2x6(self):
+        self._save_settings(templates=[{
+            "id": "tpl-legacy", "name": "2x6 cũ", "print_format": "s6x2_2",
+        }])
+
+        settings = settings_service.load_settings()
+
+        self.assertEqual(settings["templates"][0]["print_format"], "s2x6")
 
     def test_composition_keeps_final_and_removes_raw_after_offline_queueing(self):
         session_id = "session-b"

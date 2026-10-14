@@ -3,11 +3,35 @@ import { useNavigate } from "react-router-dom";
 
 const Admin = () => {
     const navigate = useNavigate();
-    const [settings, setSettings] = useState({ countdown_capture: 3, review_timeout: 20 });
+    const [settings, setSettings] = useState({
+        countdown_capture: 3,
+        review_timeout: 20,
+        qr_timeout: 15,
+        auto_print: false,
+        enable_retake: true,
+        enable_review_page: true,
+        offline_mode: false,
+        save_session_raw_images: false,
+        printer_model: 'RX1HS',
+        templates: [],
+        max_print_copies: 10,
+        hot_folder_dir: 'ptb_data/hot_folder',
+        bg_url: ""
+    });
     const [templates, setTemplates] = useState([]);
     const [uploadName, setUploadName] = useState("");
     const [uploadFile, setUploadFile] = useState(null);
+    const [uploadPrintFormat, setUploadPrintFormat] = useState("s4x6");
     const [message, setMessage] = useState("");
+    const [savingSettings, setSavingSettings] = useState(false);
+    const [offlineQueue, setOfflineQueue] = useState([]);
+    const [isLoadingQueue, setIsLoadingQueue] = useState(false);
+    const [syncingQueue, setSyncingQueue] = useState(null);
+    const saveLock = useRef(false);
+    const [draggedTemplateId, setDraggedTemplateId] = useState(null);
+    const [dragOverTemplateId, setDragOverTemplateId] = useState(null);
+    const [dragInsertPosition, setDragInsertPosition] = useState('before');
+    const templatePointerDrag = useRef(null);
 
     const [editingTpl, setEditingTpl] = useState(null);
     const [bgFile, setBgFile] = useState(null);
@@ -25,6 +49,7 @@ const Admin = () => {
     // Trạng thái mở/đóng của các nav bên trái
     const [expandedNav, setExpandedNav] = useState({
         settings: false,
+        offlineQueue: false,
         camera: true,
         frames: true
     });
@@ -64,29 +89,97 @@ const Admin = () => {
 
     useEffect(() => {
         document.body.style.overflow = "hidden";
-        fetchSettings();
+        let active = true;
+        fetch('http://127.0.0.1:8000/api/settings')
+            .then(response => {
+                if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                return response.json();
+            })
+            .then(data => {
+                if (!active) return;
+                setSettings(current => ({ ...current, ...data }));
+                setTemplates(Array.isArray(data.templates) ? data.templates : []);
+            })
+            .catch(error => {
+                console.error('Lỗi lấy cài đặt:', error);
+                if (active) {
+                    setMessage('Không thể tải cài đặt máy in');
+                    messageTimerRef.current = setTimeout(() => setMessage(''), 3500);
+                }
+            });
         fetchTemplates();
+        setIsLoadingQueue(true);
+        fetch('http://127.0.0.1:8000/api/offline-queue')
+            .then(response => {
+                if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                return response.json();
+            })
+            .then(data => {
+                if (active) setOfflineQueue(Array.isArray(data.items) ? data.items : []);
+            })
+            .catch(error => {
+                console.error('Lỗi tải Offline Queue:', error);
+                if (active) setMessage('Không thể tải Offline Queue');
+            })
+            .finally(() => { if (active) setIsLoadingQueue(false); });
         return () => {
+            active = false;
             document.body.style.overflow = "";
             if (messageTimerRef.current) clearTimeout(messageTimerRef.current);
         };
     }, []);
 
-    const fetchSettings = async () => {
-        try {
-            const res = await fetch("http://127.0.0.1:8000/api/settings");
-            setSettings(await res.json());
-        } catch (err) {
-            console.error("Lỗi lấy cài đặt:", err);
-        }
-    };
-
     const fetchTemplates = async () => {
         try {
             const res = await fetch("http://127.0.0.1:8000/api/templates");
-            setTemplates(await res.json());
+            const data = await res.json();
+            const nextTemplates = Array.isArray(data) ? data : [];
+            setTemplates(nextTemplates);
+            setSettings(current => ({ ...current, templates: nextTemplates }));
         } catch (err) {
             console.error("Lỗi lấy danh sách khung:", err);
+        }
+    };
+
+    const loadOfflineQueue = async () => {
+        setIsLoadingQueue(true);
+        try {
+            const response = await fetch("http://127.0.0.1:8000/api/offline-queue");
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            const data = await response.json();
+            setOfflineQueue(Array.isArray(data.items) ? data.items : []);
+        } catch (error) {
+            console.error("Lỗi tải Offline Queue:", error);
+            showMessage("Không thể tải Offline Queue");
+        } finally {
+            setIsLoadingQueue(false);
+        }
+    };
+
+    const syncOfflineQueue = async (sessionId = null) => {
+        setSyncingQueue(sessionId || "all");
+        try {
+            const response = await fetch("http://127.0.0.1:8000/api/offline-queue/sync", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ session_id: sessionId })
+            });
+            if (!response.ok) {
+                const data = await response.json().catch(() => ({}));
+                throw new Error(data.detail || `HTTP ${response.status}`);
+            }
+            const data = await response.json();
+            const failed = (data.results || []).filter(item => item.status === "failed");
+            const firstError = failed[0]?.error;
+            showMessage(failed.length
+                ? `Đồng bộ thất bại: ${firstError || `${failed.length} phiên có lỗi`}`
+                : "Đồng bộ Offline Queue hoàn tất");
+        } catch (error) {
+            console.error("Lỗi đồng bộ Offline Queue:", error);
+            showMessage(`Không thể đồng bộ: ${error.message}`);
+        } finally {
+            setSyncingQueue(null);
+            await loadOfflineQueue();
         }
     };
 
@@ -152,13 +245,121 @@ const Admin = () => {
         }
     };
 
+    const saveSettings = async (nextSettings, successMessage = "Lưu cài đặt thành công!") => {
+        if (saveLock.current) throw new Error('Đang lưu cài đặt');
+        saveLock.current = true;
+        setSavingSettings(true);
+        try {
+            const res = await fetch("http://127.0.0.1:8000/api/settings", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(nextSettings)
+            });
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            const data = await res.json();
+            setSettings(current => ({ ...current, ...(data.settings || nextSettings) }));
+            showMessage(successMessage);
+        } finally {
+            saveLock.current = false;
+            setSavingSettings(false);
+        }
+    };
+
+    const updateSetting = async (key, value) => {
+        try {
+            await saveSettings({ [key]: value });
+        } catch (error) {
+            showMessage(`Không thể lưu: ${error.message}`);
+        }
+    };
+
+    const reorderTemplates = async (sourceId, targetId, placement = 'before') => {
+        if (sourceId === targetId || savingSettings) return;
+        const source = templates.findIndex(item => item.id === sourceId);
+        const target = templates.findIndex(item => item.id === targetId);
+        if (source < 0 || target < 0) return;
+        const reordered = [...templates];
+        const [moved] = reordered.splice(source, 1);
+        const targetIndex = reordered.findIndex(item => item.id === targetId);
+        reordered.splice(targetIndex + (placement === 'after' ? 1 : 0), 0, moved);
+        setTemplates(reordered);
+        try {
+            await saveSettings({ templates: reordered }, 'Đã lưu thứ tự khung ảnh');
+        } catch (error) {
+            showMessage(`Không thể sắp xếp: ${error.message}`);
+            await fetchTemplates();
+        }
+    };
+
+    const clearTemplatePointerDrag = () => {
+        templatePointerDrag.current = null;
+        setDraggedTemplateId(null);
+        setDragOverTemplateId(null);
+        setDragInsertPosition('before');
+    };
+
+    const startTemplatePointerDrag = (event, templateId) => {
+        if (savingSettings) return;
+        event.preventDefault();
+        event.stopPropagation();
+        templatePointerDrag.current = {
+            pointerId: event.pointerId,
+            sourceId: templateId,
+            startX: event.clientX,
+            startY: event.clientY,
+            moved: false,
+            targetId: null,
+            placement: 'before'
+        };
+        event.currentTarget.setPointerCapture?.(event.pointerId);
+    };
+
+    const moveTemplatePointerDrag = (event) => {
+        const drag = templatePointerDrag.current;
+        if (!drag || drag.pointerId !== event.pointerId) return;
+        if (!drag.moved && Math.hypot(event.clientX - drag.startX, event.clientY - drag.startY) < 6) return;
+        drag.moved = true;
+        setDraggedTemplateId(drag.sourceId);
+
+        const targetElement = document.elementFromPoint(event.clientX, event.clientY)?.closest('[data-template-id]');
+        const targetId = targetElement?.dataset.templateId;
+        if (!targetId || targetId === drag.sourceId) return;
+        const bounds = targetElement.getBoundingClientRect();
+        drag.targetId = targetId;
+        drag.placement = event.clientY < bounds.top + bounds.height / 2 ? 'before' : 'after';
+        setDragOverTemplateId(targetId);
+        setDragInsertPosition(drag.placement);
+    };
+
+    const finishTemplatePointerDrag = (event) => {
+        const drag = templatePointerDrag.current;
+        if (!drag || drag.pointerId !== event.pointerId) return;
+        event.currentTarget.releasePointerCapture?.(event.pointerId);
+        clearTemplatePointerDrag();
+        if (drag.moved && drag.targetId) reorderTemplates(drag.sourceId, drag.targetId, drag.placement);
+    };
+
     const handleSaveSettings = async () => {
-        const res = await fetch("http://127.0.0.1:8000/api/settings", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(settings)
-        });
-        if (res.ok) showMessage("Lưu cài đặt thành công!");
+        try {
+            await saveSettings(settings);
+        } catch (err) {
+            console.error("Lỗi lưu cài đặt:", err);
+            showMessage("Không thể lưu cài đặt!");
+        }
+    };
+
+    const handleAutoPrintToggle = async () => {
+        if (saveLock.current) return;
+        const previousSettings = settings;
+        const updatedSettings = { ...settings, auto_print: !settings.auto_print };
+        setSettings(updatedSettings);
+        try {
+            await saveSettings(updatedSettings, updatedSettings.auto_print ? "Đã bật tự động in 1 bản" : "Đã tắt tự động in");
+        } catch (err) {
+            console.error("Lỗi đổi Auto-Print:", err);
+            setSettings(previousSettings);
+            showMessage("Không thể đổi chế độ tự động in!");
+        }
     };
 
     const handleUpload = async (e) => {
@@ -167,12 +368,14 @@ const Admin = () => {
         const formData = new FormData();
         formData.append("name", uploadName);
         formData.append("file", uploadFile);
+        formData.append("print_format", uploadPrintFormat);
 
         const res = await fetch("http://127.0.0.1:8000/api/templates/upload", { method: "POST", body: formData });
         if (res.ok) {
             showMessage("Upload khung ảnh mới thành công!");
             setUploadName("");
             setUploadFile(null);
+            setUploadPrintFormat("s4x6");
             document.getElementById("file-input").value = "";
             fetchTemplates();
         }
@@ -242,11 +445,11 @@ const Admin = () => {
             });
 
             if (res.ok) {
-                setTemplates(prev =>
-                    prev.map(t => t.id === tpl.id ? updatedTpl : t)
-                );
+                const data = await res.json();
+                setTemplates(previous => previous.map(template => template.id === tpl.id ? data.template : template));
+                setSettings(current => ({ ...current, templates: current.templates.map(template => template.id === tpl.id ? data.template : template) }));
                 if (editingTpl?.id === tpl.id) {
-                    setEditingTpl(updatedTpl);
+                    setEditingTpl(data.template);
                 }
                 showMessage(updatedTpl.hidden ? `Đã ẩn khung "${tpl.name}"!` : `Đã hiện khung "${tpl.name}"!`);
             }
@@ -348,6 +551,26 @@ const Admin = () => {
 
                         {expandedNav.settings && (
                             <div style={{ padding: "0 15px 15px 15px", borderTop: "1px solid #e2e8f0" }}>
+                                <fieldset disabled={savingSettings} style={{ border: 0, padding: '16px 0' }}>
+                                    <label htmlFor="printer-model">Tên máy in trong HFP</label>
+                                    <input id="printer-model" type="text" value={settings.printer_model}
+                                        onChange={event => setSettings(current => ({ ...current, printer_model: event.target.value }))}
+                                        style={{ width: '100%', boxSizing: 'border-box', padding: 10, margin: '8px 0' }} />
+                                    <button type="button" onClick={() => saveSettings({ printer_model: settings.printer_model }, 'Đã lưu cấu hình máy in')}>Lưu cấu hình máy in</button>
+                                    <label htmlFor="hot-folder-dir" style={{ display: 'block', marginTop: 16 }}>Hot Folder</label>
+                                    <input id="hot-folder-dir" type="text" value={settings.hot_folder_dir || ''}
+                                        onChange={event => setSettings(current => ({ ...current, hot_folder_dir: event.target.value }))}
+                                        placeholder="ptb_data/hot_folder"
+                                        style={{ width: '100%', boxSizing: 'border-box', padding: 10, margin: '8px 0' }} />
+                                    {[['enable_review_page', 'Bật màn hình xem lại'], ['offline_mode', 'Chụp Offline (Không tạo QR)'], ['enable_retake', 'Cho phép chụp lại (Retake)'], ['save_session_raw_images', 'Lưu ảnh gốc của phiên chụp']].map(([key, label]) => (
+                                        <label key={key} style={{ display: 'block', marginTop: 16 }}>
+                                            <input type="checkbox" checked={Boolean(settings[key])} onChange={event => updateSetting(key, event.target.checked)} /> {label}
+                                        </label>
+                                    ))}
+                                    <p style={{ margin: '6px 0 0', fontSize: '12px', lineHeight: 1.45, color: '#64748b' }}>
+                                        Khi bật, ảnh raw được giữ trong thư mục session sau khi ghép ảnh. Khi tắt, ảnh raw được xóa sau khi ghép thành công.
+                                    </p>
+                                </fieldset>
                                 <div style={{ marginTop: "15px", paddingBottom: "15px", borderBottom: "1px solid #e2e8f0" }}>
                                     <label style={{ fontSize: "13px", fontWeight: "bold", color: "#334155", display: "block", marginBottom: "8px" }}>Hình nền App:</label>
                                     <input id="bg-input" type="file" accept="image/png, image/jpeg" onChange={(e) => setBgFile(e.target.files[0])} style={{ width: "100%", fontSize: "12px", marginBottom: "10px" }} />
@@ -357,17 +580,101 @@ const Admin = () => {
                                     </div>
                                 </div>
 
-                                <div style={{ display: "flex", gap: "10px", marginTop: "15px", marginBottom: "15px" }}>
-                                    <div style={{ flex: 1, minWidth: 0 }}>
-                                        <label style={{ fontSize: "12px", color: "#64748b", display: "block", marginBottom: "4px" }}>Đếm ngược (s):</label>
+                                <div style={{ display: "flex", flexWrap: "wrap", gap: "10px", marginTop: "15px", marginBottom: "15px" }}>
+                                    <div style={{ flex: "1 1 84px", minWidth: 0 }}>
+                                        <label style={{ fontSize: "12px", color: "#64748b", display: "block", marginBottom: "4px" }}>Đếm ngược chụp (s):</label>
                                         <input type="number" value={settings.countdown_capture} onChange={(e) => { const val = e.target.value; setSettings({ ...settings, countdown_capture: val === "" ? "" : parseInt(val) }); }} style={{ width: "100%", minWidth: 0, padding: "6px", borderRadius: "4px", border: "1px solid #cbd5e1", boxSizing: "border-box" }} />
                                     </div>
-                                    <div style={{ flex: 1, minWidth: 0 }}>
-                                        <label style={{ fontSize: "12px", color: "#64748b", display: "block", marginBottom: "4px" }}>Chờ QR (s):</label>
+                                    <div style={{ flex: "1 1 84px", minWidth: 0 }}>
+                                        <label style={{ fontSize: "12px", color: "#64748b", display: "block", marginBottom: "4px" }}>Thời gian xem lại (s):</label>
                                         <input type="number" value={settings.review_timeout} onChange={(e) => { const val = e.target.value; setSettings({ ...settings, review_timeout: val === "" ? "" : parseInt(val) }); }} style={{ width: "100%", minWidth: 0, padding: "6px", borderRadius: "4px", border: "1px solid #cbd5e1", boxSizing: "border-box" }} />
                                     </div>
+                                    <div style={{ flex: "1 1 84px", minWidth: 0 }}>
+                                        <label style={{ fontSize: "12px", color: "#64748b", display: "block", marginBottom: "4px" }}>Thời gian quét QR (s):</label>
+                                        <input type="number" min="1" value={settings.qr_timeout} onChange={(e) => { const val = e.target.value; setSettings({ ...settings, qr_timeout: val === "" ? "" : parseInt(val) }); }} style={{ width: "100%", minWidth: 0, padding: "6px", borderRadius: "4px", border: "1px solid #cbd5e1", boxSizing: "border-box" }} />
+                                    </div>
                                 </div>
-                                <button onClick={handleSaveSettings} style={{ width: "100%", padding: "8px", backgroundColor: "#10b981", color: "white", border: "none", borderRadius: "4px", cursor: "pointer", fontSize: "13px", fontWeight: "bold" }}>Lưu Thời Gian</button>
+
+                                <div style={{ marginTop: "15px", paddingTop: "15px", borderTop: "1px solid #e2e8f0" }}>
+                                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "12px", marginBottom: "12px" }}>
+                                        <div>
+                                            <div style={{ fontSize: "13px", fontWeight: "bold", color: "#334155" }}>In tự động</div>
+                                            <div style={{ fontSize: "11px", color: "#64748b", marginTop: "3px" }}>In ảnh thành phẩm ngay sau khi chụp</div>
+                                        </div>
+                                        <button
+                                            type="button"
+                                            onClick={handleAutoPrintToggle}
+                                            disabled={savingSettings}
+                                            role="switch"
+                                            aria-checked={Boolean(settings.auto_print)}
+                                            aria-label="Bật hoặc tắt tự động in"
+                                            style={{ width: "54px", height: "30px", padding: 0, backgroundColor: settings.auto_print ? "#10b981" : "#cbd5e1", border: "none", borderRadius: "15px", position: "relative", cursor: "pointer", transition: "background-color 0.2s", flexShrink: 0 }}
+                                        >
+                                            <span style={{ width: "24px", height: "24px", backgroundColor: "white", borderRadius: "50%", position: "absolute", top: "3px", left: settings.auto_print ? "27px" : "3px", transition: "left 0.2s", boxShadow: "0 1px 3px rgba(0,0,0,0.25)" }} />
+                                        </button>
+                                    </div>
+                                    <label style={{ fontSize: "12px", color: "#64748b", display: "block", marginBottom: "4px" }}>Số lượng in tối đa:</label>
+                                    <input
+                                        type="number"
+                                        min="1"
+                                        max="10"
+                                        value={settings.max_print_copies}
+                                        onChange={(e) => {
+                                            const value = e.target.value;
+                                            setSettings({ ...settings, max_print_copies: value === "" ? "" : Math.min(10, Math.max(1, parseInt(value, 10) || 1)) });
+                                        }}
+                                        style={{ width: "100%", padding: "8px", borderRadius: "4px", border: "1px solid #cbd5e1", boxSizing: "border-box" }}
+                                    />
+                                </div>
+                                <button onClick={handleSaveSettings} style={{ width: "100%", padding: "8px", marginTop: "15px", backgroundColor: "#10b981", color: "white", border: "none", borderRadius: "4px", cursor: "pointer", fontSize: "13px", fontWeight: "bold" }}>Lưu Cài Đặt Chung</button>
+                            </div>
+                        )}
+                    </div>
+
+                    <div style={{ backgroundColor: "white", borderRadius: "8px", boxShadow: "0 1px 3px rgba(0,0,0,0.1)", overflow: "hidden", flexShrink: 0 }}>
+                        <div onClick={() => toggleNav('offlineQueue')} style={{ padding: "15px", display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer", backgroundColor: expandedNav.offlineQueue ? "#f8fafc" : "white" }}>
+                            <div>
+                                <h2 style={{ fontSize: "16px", margin: 0, color: "#0f172a" }}>Offline Queue</h2>
+                                <span style={{ fontSize: "11px", color: "#64748b" }}>{offlineQueue.filter(item => item.status !== "uploaded").length} phiên chờ đồng bộ</span>
+                            </div>
+                            <span style={{ fontWeight: "bold", color: "#64748b" }}>{expandedNav.offlineQueue ? "-" : "+"}</span>
+                        </div>
+
+                        {expandedNav.offlineQueue && (
+                            <div style={{ padding: "15px", borderTop: "1px solid #e2e8f0" }}>
+                                <p style={{ margin: "0 0 12px", fontSize: "12px", lineHeight: 1.45, color: "#475569" }}>
+                                    Ảnh offline được tải lên đúng thư mục R2 đã gắn với QR của từng phiên. Ảnh local không bị xóa.
+                                </p>
+                                <div style={{ display: "flex", gap: "8px", marginBottom: "12px" }}>
+                                    <button type="button" onClick={loadOfflineQueue} disabled={isLoadingQueue || syncingQueue !== null} style={{ flex: 1, padding: "9px", border: "1px solid #cbd5e1", backgroundColor: "white", borderRadius: "5px", cursor: "pointer", fontWeight: "bold", fontSize: "12px" }}>
+                                        {isLoadingQueue ? "Đang tải..." : "Tải lại"}
+                                    </button>
+                                    <button type="button" onClick={() => syncOfflineQueue()} disabled={syncingQueue !== null || offlineQueue.length === 0} style={{ flex: 1, padding: "9px", border: "none", backgroundColor: "#2563eb", color: "white", borderRadius: "5px", cursor: "pointer", fontWeight: "bold", fontSize: "12px", opacity: syncingQueue !== null || offlineQueue.length === 0 ? 0.55 : 1 }}>
+                                        {syncingQueue === "all" ? "Đang đồng bộ..." : "Đồng bộ tất cả"}
+                                    </button>
+                                </div>
+                                {offlineQueue.length === 0 ? (
+                                    <p style={{ margin: 0, textAlign: "center", color: "#64748b", fontSize: "12px" }}>Không có ảnh trong Offline Queue.</p>
+                                ) : (
+                                    <div style={{ maxHeight: "260px", overflowY: "auto", paddingRight: "4px" }}>
+                                        {offlineQueue.map(item => {
+                                            const statusColor = item.status === "uploaded" ? "#15803d" : item.status === "failed" || item.status === "invalid" ? "#dc2626" : "#b45309";
+                                            const canSync = item.status !== "uploaded";
+                                            return <div key={item.session_id} style={{ border: "1px solid #e2e8f0", borderRadius: "6px", padding: "9px", marginBottom: "8px" }}>
+                                                <div style={{ display: "flex", justifyContent: "space-between", gap: "8px", alignItems: "center" }}>
+                                                    <div style={{ minWidth: 0 }}>
+                                                        <div style={{ fontWeight: "bold", fontSize: "12px", color: "#0f172a", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{item.session_id}</div>
+                                                        <div style={{ fontSize: "11px", color: statusColor, marginTop: "3px" }}>{item.status} · {item.image_count} ảnh</div>
+                                                    </div>
+                                                    {canSync && <button type="button" onClick={() => syncOfflineQueue(item.session_id)} disabled={syncingQueue !== null} style={{ padding: "7px 9px", border: "none", borderRadius: "4px", backgroundColor: "#10b981", color: "white", cursor: "pointer", fontSize: "11px", fontWeight: "bold", whiteSpace: "nowrap", opacity: syncingQueue !== null ? 0.55 : 1 }}>
+                                                        {syncingQueue === item.session_id ? "Đang tải..." : "Đồng bộ"}
+                                                    </button>}
+                                                </div>
+                                                {item.last_error && <div style={{ color: "#dc2626", fontSize: "11px", marginTop: "6px", wordBreak: "break-word" }}>{item.last_error}</div>}
+                                            </div>;
+                                        })}
+                                    </div>
+                                )}
                             </div>
                         )}
                     </div>
@@ -403,14 +710,20 @@ const Admin = () => {
                             <div style={{ padding: "0 15px 15px 15px", borderTop: "1px solid #e2e8f0", display: "flex", flexDirection: "column", flex: 1, overflow: "hidden" }}>
                                 <form onSubmit={handleUpload} style={{ marginTop: "15px", marginBottom: "15px", paddingBottom: "15px", borderBottom: "1px solid #e2e8f0" }}>
                                     <input type="text" placeholder="Tên khung" value={uploadName} onChange={(e) => setUploadName(e.target.value)} style={{ width: "100%", padding: "8px", marginBottom: "10px", boxSizing: "border-box", borderRadius: "4px", border: "1px solid #cbd5e1", minWidth: 0 }} />
+                                    <select value={uploadPrintFormat} onChange={(event) => setUploadPrintFormat(event.target.value)} style={{ width: "100%", padding: "8px", marginBottom: "10px", boxSizing: "border-box", borderRadius: "4px", border: "1px solid #cbd5e1" }}>
+                                        <option value="s4x6">s4x6 (4x6)</option>
+                                        <option value="s2x6">s2x6 (một dải 2x6)</option>
+                                    </select>
                                     <input id="file-input" type="file" accept="image/png, image/jpeg" onChange={handleFileChange} style={{ display: "block", marginBottom: "10px", fontSize: "13px", minWidth: 0, width: "100%" }} />
                                     <button type="submit" style={{ padding: "8px", backgroundColor: "#0284c7", color: "white", border: "none", width: "100%", borderRadius: "4px", cursor: "pointer", fontWeight: "bold", fontSize: "13px" }}>Thêm Khung Mới</button>
                                 </form>
 
+                                <p style={{ margin: "0 0 8px", fontSize: "12px", color: "#64748b" }}>Kéo tay nắm ở bên phải. Vạch xanh cho biết frame sẽ được chèn vào vị trí nào.</p>
                                 <div style={{ overflowY: "auto", flex: 1, paddingRight: "5px" }}>
                                     {templates.map(tpl => (
                                         <div
                                             key={tpl.id}
+                                            data-template-id={tpl.id}
                                             onClick={() => { handleSelectTemplate(tpl); setShowLiveView(false); }}
                                             style={{
                                                 border: editingTpl?.id === tpl.id ? "2px solid #3b82f6" : "1px solid #e2e8f0",
@@ -423,7 +736,10 @@ const Admin = () => {
                                                 justifyContent: "space-between",
                                                 alignItems: "center",
                                                 gap: "8px",
-                                                opacity: tpl.hidden ? 0.55 : 1
+                                                opacity: draggedTemplateId === tpl.id ? 0.45 : (tpl.hidden ? 0.55 : 1),
+                                                boxShadow: dragOverTemplateId === tpl.id && draggedTemplateId !== tpl.id
+                                                    ? dragInsertPosition === 'before' ? "0 -4px 0 #10b981" : "0 4px 0 #10b981" : "none",
+                                                transition: "border-color 0.15s, box-shadow 0.15s, opacity 0.15s"
                                             }}
                                         >
                                             <div style={{ flex: 1, minWidth: 0 }}>
@@ -452,7 +768,7 @@ const Admin = () => {
                                                     )}
                                                 </b>
                                                 <span style={{ fontSize: "12px", color: "#64748b" }}>
-                                                    {tpl.orientation} | {tpl.num_poses || (tpl.slots?.length || 3)} kiểu
+                                                    {tpl.print_format} | {tpl.orientation || 'chưa đặt hướng'} | {tpl.num_poses || (tpl.slots?.length || 3)} kiểu
                                                 </span>
                                             </div>
 
@@ -472,8 +788,19 @@ const Admin = () => {
                                                     transition: "all 0.15s"
                                                 }}
                                             >
-                                                {tpl.hidden ? "🚫" : "👁"}
+                                                {tpl.hidden ? "Hiện" : "Ẩn"}
                                             </button>
+                                            <div style={{ display: 'flex', alignItems: 'center', flexShrink: 0 }} onClick={event => event.stopPropagation()}>
+                                                <span
+                                                    aria-label={`Kéo ${tpl.name} để sắp xếp`}
+                                                    title="Kéo để sắp xếp"
+                                                    onPointerDown={event => startTemplatePointerDrag(event, tpl.id)}
+                                                    onPointerMove={moveTemplatePointerDrag}
+                                                    onPointerUp={finishTemplatePointerDrag}
+                                                    onPointerCancel={clearTemplatePointerDrag}
+                                                    style={{ opacity: savingSettings ? 0.2 : 0.65, fontSize: 22, letterSpacing: '-5px', cursor: savingSettings ? 'not-allowed' : (draggedTemplateId === tpl.id ? 'grabbing' : 'grab'), userSelect: 'none', touchAction: 'none', padding: '5px 9px 5px 4px', lineHeight: 0.8, color: '#475569', borderRadius: 5, background: '#f1f5f9', border: '1px solid #e2e8f0' }}
+                                                >⋮⋮</span>
+                                            </div>
                                         </div>
                                     ))}
                                 </div>
@@ -593,6 +920,7 @@ const Admin = () => {
                         <div style={{ display: "flex", flexDirection: "column", gap: "15px", height: "100%" }}>
                             <div style={{ display: "flex", gap: "10px" }}>
                                 <div style={{ flex: 1, minWidth: 0 }}><label style={{ fontSize: "12px", fontWeight: "bold", color: "#334155" }}>Định hướng:</label><select value={editingTpl.orientation} onChange={(e) => setEditingTpl({ ...editingTpl, orientation: e.target.value })} style={{ width: "100%", padding: "6px", borderRadius: "4px", border: "1px solid #cbd5e1", minWidth: 0 }}><option value="portrait">Dọc</option><option value="landscape">Ngang</option></select></div>
+                                <div style={{ flex: 1, minWidth: 0 }}><label style={{ fontSize: "12px", fontWeight: "bold", color: "#334155" }}>Khổ in:</label><select value={editingTpl.print_format || 's4x6'} onChange={(e) => setEditingTpl({ ...editingTpl, print_format: e.target.value })} style={{ width: "100%", padding: "6px", borderRadius: "4px", border: "1px solid #cbd5e1", minWidth: 0 }}><option value="s4x6">s4x6</option><option value="s2x6">s2x6 (một dải)</option></select></div>
                                 <div style={{ flex: 1, minWidth: 0 }}><label style={{ fontSize: "12px", fontWeight: "bold", color: "#dc3545" }}>W Gốc:</label><input type="number" readOnly value={editingTpl.canvas_size.width} style={{ width: "100%", minWidth: 0, padding: "6px", backgroundColor: "#f1f5f9", borderRadius: "4px", border: "1px solid #cbd5e1", boxSizing: "border-box" }} /></div>
                                 <div style={{ flex: 1, minWidth: 0 }}><label style={{ fontSize: "12px", fontWeight: "bold", color: "#dc3545" }}>H Gốc:</label><input type="number" readOnly value={editingTpl.canvas_size.height} style={{ width: "100%", minWidth: 0, padding: "6px", backgroundColor: "#f1f5f9", borderRadius: "4px", border: "1px solid #cbd5e1", boxSizing: "border-box" }} /></div>
                             </div>
