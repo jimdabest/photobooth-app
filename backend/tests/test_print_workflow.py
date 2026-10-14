@@ -59,7 +59,7 @@ class CentralizedFileWorkflowTests(unittest.TestCase):
         self.assertTrue(settings["enable_retake"])
         self.assertEqual(settings["qr_timeout"], 15)
         self.assertEqual(settings["hot_folder_dir"], "ptb_data/hot_folder")
-        self.assertEqual([template["print_format"] for template in settings["templates"]], ["s4x6", "s2x6"])
+        self.assertEqual([template["print_format"] for template in settings["templates"]], ["s4x6", "s6x2_2"])
 
     def test_print_routing_clamps_copies_and_uses_independent_job_names(self):
         session_id = "session-a"
@@ -79,28 +79,31 @@ class CentralizedFileWorkflowTests(unittest.TestCase):
                 self.assertEqual(print_job.mode, "RGB")
                 self.assertEqual(tuple(round(value) for value in print_job.info["dpi"]), (300, 300))
 
-    def test_2x6_job_is_native_strip_without_4x6_padding(self):
+    def test_2x6_job_is_a_two_up_4x6_sheet_with_matching_strips(self):
         session_id = "session-2x6"
         source = self.final_dir / f"{session_id}.jpg"
         Image.new("RGB", (880, 2650), "blue").save(source)
         self._save_settings(printer_model="RX1HS", max_print_copies=1)
 
-        [file_name] = image_service.send_to_hot_folder(session_id, "s2x6", 1)
+        [file_name] = image_service.send_to_hot_folder(session_id, "s6x2_2", 1)
 
         with Image.open(file_name) as print_job:
-            self.assertEqual(print_job.size, (600, 1800))
+            self.assertEqual(print_job.size, (1200, 1800))
             self.assertEqual(print_job.mode, "RGB")
             self.assertEqual(tuple(round(value) for value in print_job.info["dpi"]), (300, 300))
             self.assertLessEqual(print_job.getpixel((10, 900))[0], 10)
+            left_pixel = print_job.getpixel((10, 900))
+            right_pixel = print_job.getpixel((610, 900))
+            self.assertTrue(all(abs(left - right) <= 2 for left, right in zip(left_pixel, right_pixel)))
 
-    def test_legacy_two_up_format_migrates_to_single_2x6(self):
+    def test_single_2x6_format_migrates_to_two_up_2x6(self):
         self._save_settings(templates=[{
-            "id": "tpl-legacy", "name": "2x6 cũ", "print_format": "s6x2_2",
+            "id": "tpl-legacy", "name": "2x6 cũ", "print_format": "s2x6",
         }])
 
         settings = settings_service.load_settings()
 
-        self.assertEqual(settings["templates"][0]["print_format"], "s2x6")
+        self.assertEqual(settings["templates"][0]["print_format"], "s6x2_2")
 
     def test_composition_keeps_final_and_removes_raw_after_offline_queueing(self):
         session_id = "session-b"

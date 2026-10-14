@@ -74,27 +74,32 @@ def get_hot_folder_dir(settings: dict | None = None) -> Path:
 def _write_hfp_job(source: Path, destination: Path, print_format: str) -> None:
     """Write a DNP-compatible print file without altering the kiosk original.
 
-    HFP's ``s4x6`` queue takes one 4x6 image. A kiosk 2x6 template must go
-    to ``s2x6`` as one native strip. ``s6x2_2`` is HFP's two-up batching
-    queue and can put two customers on one sheet, so it is migrated to
-    ``s2x6`` by settings_service before jobs are created.
+    HFP's ``s4x6`` queue takes one 4x6 image. DNP documents that its
+    ``s6x2_2`` queue also requires one 4x6 image: it cuts that sheet into
+    two 2x6 strips. Build the two-up sheet here, duplicating the current
+    customer's strip, so HFP never pairs photos from different sessions.
     User-uploaded templates may be preview-sized, so letterbox rather than
     crop the frame.
     """
-    if print_format == "s4x6":
-        output_size = _HFP_4X6_JOB_SIZE
-    elif print_format == "s2x6":
-        output_size = _HFP_2X6_JOB_SIZE
-    else:
+    if print_format not in {"s4x6", "s6x2_2"}:
         shutil.copy2(source, destination)
         return
 
     with Image.open(source) as original:
         image = ImageOps.exif_transpose(original).convert("RGB")
-        fitted = ImageOps.contain(image, output_size, method=Image.Resampling.LANCZOS)
-        canvas = Image.new("RGB", output_size, "white")
-        offset = ((canvas.width - fitted.width) // 2, (canvas.height - fitted.height) // 2)
-        canvas.paste(fitted, offset)
+        if print_format == "s4x6":
+            fitted = ImageOps.contain(image, _HFP_4X6_JOB_SIZE, method=Image.Resampling.LANCZOS)
+            canvas = Image.new("RGB", _HFP_4X6_JOB_SIZE, "white")
+            offset = ((canvas.width - fitted.width) // 2, (canvas.height - fitted.height) // 2)
+            canvas.paste(fitted, offset)
+        else:
+            strip = ImageOps.contain(image, _HFP_2X6_JOB_SIZE, method=Image.Resampling.LANCZOS)
+            strip_canvas = Image.new("RGB", _HFP_2X6_JOB_SIZE, "white")
+            strip_offset = ((strip_canvas.width - strip.width) // 2, (strip_canvas.height - strip.height) // 2)
+            strip_canvas.paste(strip, strip_offset)
+            canvas = Image.new("RGB", _HFP_4X6_JOB_SIZE, "white")
+            canvas.paste(strip_canvas, (0, 0))
+            canvas.paste(strip_canvas, (_HFP_2X6_JOB_SIZE[0], 0))
         canvas.save(destination, "JPEG", quality=95, dpi=(300, 300))
 
 

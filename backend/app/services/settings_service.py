@@ -14,7 +14,7 @@ _PATH_SEGMENT = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_. -]*$")
 
 DEFAULT_TEMPLATES = [
     {"id": "tpl_1", "name": "Khung 4x6", "print_format": "s4x6"},
-    {"id": "tpl_2", "name": "Khung 2x6", "print_format": "s2x6"},
+    {"id": "tpl_2", "name": "Khung 2x6", "print_format": "s6x2_2"},
 ]
 DEFAULT_HOT_FOLDER_DIR = "ptb_data/hot_folder"
 
@@ -46,11 +46,11 @@ def _normalise_template(template: Any) -> dict[str, Any]:
         result[key] = value
     if not _PATH_SEGMENT.fullmatch(result["print_format"]):
         raise ValueError("print_format chỉ được chứa chữ, số, khoảng trắng, dấu gạch dưới, gạch ngang hoặc dấu chấm")
-    # HFP's s6x2_2 queue batches two unrelated 2x6 jobs onto one sheet.
-    # Existing kiosk templates used it as an alias for a single 2x6 strip,
-    # which mixes customer photos. Migrate that legacy value on load.
-    if result["print_format"] == "s6x2_2":
-        result["print_format"] = "s2x6"
+    # A kiosk 2x6 layout must be delivered as one 4x6 two-up image to HFP's
+    # s6x2_2 queue. The single-strip s2x6 queue can hold a job while waiting
+    # for media processing, so migrate the old temporary mapping on load.
+    if result["print_format"] == "s2x6":
+        result["print_format"] = "s6x2_2"
     return result
 
 
