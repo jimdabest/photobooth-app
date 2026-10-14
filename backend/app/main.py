@@ -3,6 +3,9 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from slowapi.middleware import SlowAPIMiddleware
 from app.routers import api_router
 from app.config import BASE_DATA_DIR
 from app.services.camera_provider import canon_cam
@@ -17,6 +20,9 @@ async def lifespan(app):
 
 
 app = FastAPI(title="Photobooth Backend", version="1.0.0", lifespan=lifespan)
+app.state.limiter = api_router.limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+app.add_middleware(SlowAPIMiddleware)
 
 # Cấu hình CORS để Frontend (React) có thể gọi API mà không bị lỗi mạng
 app.add_middleware(
