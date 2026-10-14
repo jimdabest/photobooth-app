@@ -18,6 +18,7 @@
   "scripts": {
     "start": "react-scripts start",
     "build": "react-scripts build",
+    "deploy:pages": "npx wrangler pages deploy build --project-name simplex-photobooth",
     "electron:start": "concurrently \"cross-env BROWSER=none npm start\" \"wait-on http://localhost:3000 && electron .\"",
     "test": "react-scripts test",
     "eject": "react-scripts eject"

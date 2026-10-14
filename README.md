@@ -1,124 +1,170 @@
-# 📸 Photobooth Kiosk System
+# Photobooth Kiosk
 
-Hệ thống phần mềm Photobooth thương mại hiện đại, được xây dựng theo mô hình tách biệt (Decoupled Architecture) giữa Frontend (React) và Backend (FastAPI/Python), hỗ trợ giao tiếp thời gian thực qua WebSocket và quản trị trực tuyến qua Admin Panel.
+[![Test](https://github.com/jimdabest/photobooth-app/actions/workflows/test.yml/badge.svg)](https://github.com/jimdabest/photobooth-app/actions/workflows/test.yml)
 
----
+Photobooth Kiosk là ứng dụng chụp ảnh kiosk cho Windows. Giao diện React chạy trong trình duyệt hoặc Electron; FastAPI điều khiển Canon DSLR hoặc camera giả lập, ghép ảnh, gửi job sang DNP Hot Folder Print và đưa ảnh lên Cloudflare R2 để khách tải qua QR.
 
-## 🌟 Tính năng chính
-
-* **Màn hình chờ (Attract Mode):** Giao diện thu hút khách hàng với hiệu ứng chạm để bắt đầu.
-* **Chọn khung động (Template Selection):** Cho phép người dùng chọn các mẫu khung (templates) được tải lên trực tiếp từ trang quản trị.
-* **Trải nghiệm chụp ảnh trực quan (Live View Overlay):** 
-  * Hiển thị luồng camera thời gian thực (lật gương tự nhiên).
-  * Đè lớp khung ảnh PNG trong suốt lên trên màn hình camera giúp khách hàng dễ dàng căn chỉnh góc chụp.
-  * Đếm ngược thời gian linh hoạt (có thể tùy chỉnh qua Admin).
-  * Hiệu ứng chớp màn hình (Flash effect) và tự động chụp liên tiếp.
-* **Màn hình xem lại & Tải ảnh qua QR (Review & QR):** 
-  * Tự động ghép các ảnh gốc vào khung PNG đã chọn thành tấm ảnh hoàn chỉnh (Strip).
-  * Tạo mã QR tức thì để khách hàng quét và tải ảnh về điện thoại.
-  * Cấu hình thời gian chờ tự động quay về màn hình chính.
-* **Trang Quản trị (Admin Panel - `/admin`):**
-  * Tùy chỉnh thời gian đếm ngược chụp ảnh và thời gian chờ quét QR.
-  * Tải lên khung ảnh mới (định dạng PNG đục lỗ tỷ lệ chuẩn).
-
----
-
-## 🏗️ Kiến trúc hệ thống
+## Kiến trúc
 
 ```text
-photobooth-app/
-├── backend/               # FastAPI Backend (Xử lý API, WebSocket, Ghép ảnh Pillow)
-│   ├── app/                  # Mã nguồn chính Backend (API, WebSocket, Image Processing)
-│   ├── EDSDK.dll             # Thư viện lõi điều khiển máy ảnh Canon (Yêu cầu copy vào)
-│   ├── EdsImage.dll          # Thư viện xử lý hình ảnh Canon đi kèm
-│   ├── photobooth_data/      # Thư mục lưu trữ cấu hình, khung ảnh và phiên chụp
-│   ├── requirements.txt      # Danh sách thư viện Python
-│   └── run.py
-└── src/                   # React Frontend (Giao diện Kiosk & Admin)
-    ├── pages/             # Các màn hình (Home, TemplateSelect, Capture, Review, Admin)
-    ├── App.js             # Bộ điều hướng (Router)
-    └── App.css            # Tấm phủ giao diện toàn cục
+Kiosk / Electron (React)
+  Home -> Chọn khung -> Capture -> Review -> Print / QR
+          | REST /api/*
+          v
+FastAPI backend
+  camera_provider -> Canon EDSDK | Mock/Webcam
+  image_service   -> Pillow compose -> final image
+  print service   -> DNP HFP Hot Folder
+  upload service  -> Cloudflare R2 -> public photo page
+          |
+          +--> ptb_data (settings, templates, sessions, final images, queue)
+
+Điện thoại khách -> QR -> Cloudflare Pages /#/photo/<session_id> -> R2
 ```
 
----
+Ba lớp chính:
 
-## ⚙️ Hướng dẫn cài đặt và chạy dự án
+- Frontend: các trang kiosk, trang Admin và trang download công khai.
+- Backend: REST API, camera abstraction, ghép ảnh, print queue và offline queue.
+- Services bên ngoài: Canon EDSDK, DNP HFP 3.x, Cloudflare R2 và Cloudflare Pages Function `functions/api/download.js`.
 
-### Yêu cầu hệ thống trước khi bắt đầu:
-* Hệ điều hành: Windows 10/11 (64-bit) để tương thích với Canon EDSDK.
-* [Node.js](https://nodejs.org/) (Phiên bản LTS khuyến nghị)
-* [Python](https://www.python.org/) (Phiên bản 3.10 trở lên)
-* Phần cứng: Máy ảnh Canon DSLR (hỗ trợ EDSDK) + Cáp kết nối USB.
+## Tính năng
 
----
+- [x] Chọn và quản lý template ảnh từ Admin.
+- [x] Live View với crop guide theo slot của khung.
+- [x] Canon DSLR ở production; Mock hoặc Webcam khi test.
+- [x] Countdown, nhiều pose, review, retake một lần và timeout tự động.
+- [x] Auto-print, giới hạn bản in và định tuyến job theo `print_format/printer_model`.
+- [x] DNP HFP 3.x Hot Folder, ảnh job 4x6 ở 300 DPI.
+- [x] Upload ảnh final và từng pose lên Cloudflare R2.
+- [x] QR dẫn tới trang khách tải ảnh; trang tải dùng Cloudflare Pages Function.
+- [x] Offline Queue và đồng bộ lại R2 khi upload gặp lỗi.
+- [x] Rate limit `POST /api/capture` để bảo vệ camera khỏi request lặp.
 
-### Bước 1: Clone dự án về máy
-```bash
+## Yêu cầu
+
+- Windows 10 hoặc 11 64-bit cho Canon EDSDK và DNP HFP.
+- Python 3.10 trở lên.
+- Node.js 18 trở lên.
+- Canon EDSDK x64 và Canon DSLR khi chạy production.
+- DNP Hot Folder Print 3.x cùng máy in DNP nếu dùng in tự động.
+
+## Cài đặt
+
+### 1. Clone và cài Canon EDSDK
+
+```powershell
 git clone https://github.com/jimdabest/photobooth-app.git
-```
-```bash
 cd photobooth-app
 ```
 
----
+Copy `EDSDK.dll` và các DLL Canon đi kèm từ bộ Canon EDSDK x64 vào `backend/`. Không cần các DLL này khi chạy `run_test.py`.
 
-### Bước 2: Cài đặt Thư viện Canon SDK (EDSDK)
-1. Tải bộ Canon EDSDK chính thức từ Canon Developer Programme.
+### 2. Cài backend
 
-2. Giải nén thư mục SDK, truy cập theo đường dẫn: `Windows` -> `x64` -> `Dll.`
+```powershell
+cd backend
+python -m venv venv
+.\venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+Copy-Item .env.example .env
+```
 
-3. Copy toàn bộ các file `.dll` (bao gồm `EDSDK.dll`, `EdsImage.dll`...) dán trực tiếp vào thư mục `backend/`.
+Sửa `backend/.env` để điền R2 và URL public. `PUBLIC_URL` phải là URL Cloudflare Pages không có `#` và không có dấu `/` cuối, ví dụ `https://simplex-photobooth.pages.dev`.
 
-### Bước 3: Cài đặt và Khởi động Backend (Python)
+Chạy production với Canon:
 
-1. Di chuyển vào thư mục backend:
-   ```bash
-   cd backend
-   ```
+```powershell
+python run.py
+```
 
-2. Tạo và kích hoạt môi trường ảo (`venv`):
-   * Trên Windows (CMD):
-     ```bash
-     python -m venv venv
-     venv\Scripts\activate
-     ```
-   * Trên Windows (PowerShell):
-     ```powershell
-     python -m venv venv
-     .\venv\Scripts\Activate.ps1
-     ```
+Chạy thử không cần Canon:
 
-3. Cài đặt các thư viện phụ thuộc:
-   ```bash
-   pip install -r requirements.txt
-   ```
+```powershell
+python run_test.py
+# Hoặc dùng webcam USB:
+python run_test.py --webcam
+```
 
-4. Khởi động Backend Server:
-   ```bash
-   python run.py
-   ```
-   *Server sẽ chạy tại địa chỉ:* `http://127.0.0.1:8000`
+Chỉ chạy một backend trên cổng 8000 tại một thời điểm.
 
----
+### 3. Cài frontend
 
-### Bước 3: Cài đặt và Khởi động Frontend (React)
+Mở PowerShell khác tại thư mục gốc dự án:
 
-1. Mở một cửa sổ Terminal mới, quay về thư mục gốc của dự án và cài đặt các gói thư viện Node.js:
-   ```bash
-   npm install
-   ```
+```powershell
+Copy-Item .env.example .env
+npm install
+npm start
+```
 
-2. Khởi động giao diện Kiosk:
-   ```bash
-   npm start
-   ```
-   *Ứng dụng sẽ tự động mở trình duyệt tại:* `http://localhost:3000`
+Kiosk chạy tại `http://localhost:3000/#/`; Admin ở `http://localhost:3000/#/admin`.
 
----
+## Cấu hình HFP và máy in DNP
 
-## 🚀 Hướng dẫn sử dụng nhanh
+Đặt Hot Folder Directory của HFP là thư mục `Prints`, ví dụ `C:\DNP\HotFolderPrint\Prints`. Backend tạo job tại:
 
-1. **Trải nghiệm Kiosk (Khách hàng):** 
-   Truy cập `http://localhost:3000/#/` để trải nghiệm luồng chọn khung, đếm ngược chụp ảnh, và quét mã QR nhận ảnh.
-2. **Trang Quản Trị (Admin):** 
-   Truy cập `http://localhost:3000/#/admin` để thay đổi thời gian đếm ngược hoặc tải lên các mẫu khung ảnh PNG mới vào hệ thống.
+```text
+<Hot Folder>/<print_format>/<printer_model>/<session>_<timestamp>_<copy>.jpg
+```
+
+Ví dụ với RX1HS 4x6: `C:\DNP\HotFolderPrint\Prints\s4x6\RX1HS`.
+
+Xem hướng dẫn vận hành và kiểm tra HFP đầy đủ tại [backend/HFP_WORKFLOW.md](backend/HFP_WORKFLOW.md).
+
+## Cloudflare R2 và QR
+
+1. Tạo R2 bucket, ví dụ `photobooth-prints`.
+2. Tạo R2 API token có quyền đọc/ghi bucket và điền `R2_ACCOUNT_ID`, `R2_ACCESS_KEY`, `R2_SECRET_KEY` vào `backend/.env`.
+3. Bật public access hoặc custom domain cho bucket, điền URL vào `R2_PUBLIC_URL`.
+4. Đặt cùng URL này vào `REACT_APP_R2_PUBLIC_URL` ở file `.env` gốc.
+5. Đặt `R2_ENABLED=true`, giữ `offline_mode=false` trong Admin để QR hiển thị và phiên chụp mới được upload.
+
+R2 lưu theo cấu trúc `photo/<session_id>/`, gồm ảnh final, các pose và `metadata.json`. Nếu upload lỗi, ảnh web đã nén được ghi vào `ptb_data/offline_queue`. Đồng bộ lại sau khi có mạng:
+
+```powershell
+cd backend
+python sync_offline_queue.py --dry-run
+python sync_offline_queue.py
+```
+
+## Cloudflare Pages
+
+Cloudflare Pages host frontend và tự đóng gói route trong thư mục gốc `functions/`. Không upload Function vào R2.
+
+```powershell
+npm run build
+$env:CLOUDFLARE_API_TOKEN = "<Cloudflare API token có quyền Pages Edit>"
+npm run deploy:pages
+```
+
+Lệnh deploy tạo production deployment cho project `simplex-photobooth`, đồng thời đưa `functions/api/download.js` lên route `/api/download`.
+
+## Kiểm thử
+
+Backend dùng camera Mock trong test:
+
+```powershell
+cd backend
+python -m unittest discover -s tests -v
+```
+
+Frontend:
+
+```powershell
+npm test -- --watchAll=false
+```
+
+## Troubleshooting
+
+| Hiện tượng | Kiểm tra và cách xử lý |
+| --- | --- |
+| Không thấy camera Canon | Kiểm tra USB, pin, tắt ứng dụng Canon khác, copy đúng DLL x64 rồi chạy lại `python run.py`. |
+| Cổng 8000 đang dùng | Dừng backend cũ hoặc dùng `python run_test.py --port 8010`; frontend mặc định gọi cổng 8000. |
+| R2 trả 401 hoặc QR không tải được | Kiểm tra R2 API token, account ID, public URL, CORS bucket và `R2_ENABLED=true`. |
+| Không in tự động | Kiểm tra HFP đang `Ready`, Hot Folder Directory là `Prints`, và đúng thư mục con `s4x6/RX1HS` hoặc format/model đang chọn. |
+| Ảnh chờ upload | Chạy `python sync_offline_queue.py` sau khi kết nối mạng được khôi phục. |
+
+## License
+
+Phát hành theo [MIT License](LICENSE).
