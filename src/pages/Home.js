@@ -10,30 +10,14 @@ function Home() {
   };
 
   return (
-    <div
-      className="kiosk-container"
-      style={{
-        cursor: 'pointer',
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        justifyContent: 'flex-end',
-        height: '100vh',
-        width: '100vw',
-        paddingBottom: '15vh'
-      }}
-    >
+    <main className="kiosk-container home-screen">
       <button
-        className="btn-primary animate-pulse-btn"
+        className="btn-primary touch-btn home-start-button"
         onClick={handleStart}
-        style={{
-          fontSize: 'clamp(1.5rem, 3vw, 2.5rem)',
-          padding: '20px 50px'
-        }}
       >
         BẮT ĐẦU NGAY
       </button>
-    </div>
+    </main>
   );
 }
 

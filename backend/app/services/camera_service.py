@@ -3,15 +3,22 @@ import time
 import ctypes
 from ctypes import wintypes
 import os
+from pathlib import Path
 from PIL import Image
 
-# Khởi tạo và nạp thư viện Canon EDSDK
-dll_path = os.path.join(os.getcwd(), 'EDSDK.dll')
-if os.path.exists(dll_path):
-    edsdk = ctypes.WinDLL(dll_path)
+# Khởi tạo và nạp thư viện Canon EDSDK.  Bản phân phối hiện tại đặt DLL ở
+# backend/, còn vị trí gốc dự án được giữ làm phương án tương thích cũ.
+_backend_dir = Path(__file__).resolve().parents[2]
+_project_dir = _backend_dir.parent
+_edsdk_candidates = (_backend_dir / "EDSDK.dll", _project_dir / "EDSDK.dll")
+dll_path = next((path for path in _edsdk_candidates if path.is_file()), None)
+if dll_path is not None:
+    edsdk = ctypes.WinDLL(str(dll_path))
+    print(f"Đã nạp Canon EDSDK: {dll_path}")
 else:
     edsdk = None
-    print("Cảnh báo: Không tìm thấy file EDSDK.dll trong thư mục gốc")
+    expected_paths = " hoặc ".join(str(path) for path in _edsdk_candidates)
+    print(f"Cảnh báo: Không tìm thấy EDSDK.dll tại {expected_paths}")
 
 
 class EdsDirectoryItemInfo(ctypes.Structure):
@@ -150,6 +157,15 @@ class CanonCamera:
                         time.sleep(0.15)
                         edsdk.EdsSendCommand(self.camera, 4, 1)  # Bấm nửa cò
                     self.action_queue = None
+                    self.action_done_event.set()
+
+                elif self.action_queue == "STOP_LIVE_VIEW":
+                    if self.camera and live_view_on:
+                        evf_mode_off = ctypes.c_uint32(0)
+                        edsdk.EdsSetPropertyData(self.camera, 0x00000501, 0, 4, ctypes.byref(evf_mode_off))
+                    live_view_on = False
+                    self.latest_frame = None
+                    self.action_queue = None
 
                 elif self.action_queue == "TRIGGER_SHUTTER":
                     if self.camera:
@@ -250,7 +266,9 @@ class CanonCamera:
 
     def pre_focus(self):
         if self.camera:
+            self.action_done_event.clear()
             self.action_queue = "PRE_FOCUS"
+            self.action_done_event.wait(timeout=2)
 
     def trigger_shutter(self, save_path: str) -> bool:
         if not self.camera:
@@ -270,9 +288,9 @@ def pre_focus_camera():
     canon_cam.pre_focus()
 
 
-def capture_raw_photo(cloud_sim_dir, pose_number):
+def capture_raw_photo(session_dir, pose_number):
     file_name = f"pose_{pose_number}.jpg"
-    file_path = os.path.join(cloud_sim_dir, file_name)
+    file_path = os.path.join(session_dir, file_name)
 
     success = canon_cam.trigger_shutter(file_path)
 

@@ -5,6 +5,7 @@ import TemplateSelect from './pages/TemplateSelect';
 import Capture from './pages/Capture';
 import Review from './pages/Review';
 import Download from './pages/Download';
+import PublicDownload from './pages/PublicDownload';
 import Admin from './pages/Admin';
 import './App.css';
 
@@ -305,7 +306,9 @@ function App() {
         <Route path="/templates" element={<TemplateSelect />} />
         <Route path="/capture" element={<Capture />} />
         <Route path="/review" element={<Review />} />
-        <Route path="/download/:sessionId" element={<Download />} />
+        <Route path="/download" element={<Download />} />
+        <Route path="/download/:sessionId" element={<PublicDownload />} />
+        <Route path="/photo/:sessionId" element={<PublicDownload />} />
         <Route path="/admin" element={<Admin />} />
       </Routes>
     </Router>

@@ -1,183 +1,128 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { QRCodeCanvas } from 'qrcode.react';
+import { printSession, request } from '../services/kioskApi';
 import '../App.css';
 
-function Review() {
-  const location = useLocation();
-  const navigate = useNavigate();
-
-  // Nhận đầy đủ thông tin từ Capture
-  const sessionId = location.state?.sessionId;
-  const imageUrl = location.state?.imageUrl;
-
-  const [timeLeft, setTimeLeft] = useState(30);
-  const [isSettingLoaded, setIsSettingLoaded] = useState(false);
-
-  // QR URL: ưu tiên cloud URL từ R2, fallback về local download page
-  const PUBLIC_URL = process.env.REACT_APP_PUBLIC_URL || 'https://simplex-photobooth.pages.dev';
-  const qrValue = sessionId
-    ? `${PUBLIC_URL}/#/download/${sessionId}`
-    : 'about:blank';
-
-
-  useEffect(() => {
-    fetch('http://127.0.0.1:8000/api/settings')
-      .then(res => res.json())
-      .then(data => {
-        setTimeLeft(data.review_timeout || 30);
-        setIsSettingLoaded(true);
-      })
-      .catch(err => {
-        console.error("Lỗi lấy cài đặt từ Admin:", err);
-        setIsSettingLoaded(true);
-      });
-  }, []);
-
-  useEffect(() => {
-    if (!isSettingLoaded) return;
-
-    const timer = setInterval(() => {
-      setTimeLeft((prevTime) => {
-        if (prevTime <= 1) {
-          clearInterval(timer);
-          navigate('/');
-          return 0;
-        }
-        return prevTime - 1;
-      });
-    }, 1000);
-
-    return () => clearInterval(timer);
-  }, [navigate, isSettingLoaded]);
-
-  // Không có ảnh thì quay về trang chủ
-  if (!imageUrl) {
-    return (
-      <div className="kiosk-container">
-        <h1 style={{ fontSize: '2rem', color: '#0f172a', marginBottom: '2rem' }}>
-          Không tìm thấy ảnh
-        </h1>
-        <button className="btn-primary" onClick={() => navigate('/')}>
-          Quay Về Trang Chủ
-        </button>
-      </div>
-    );
+function restoreReviewState() {
+  try {
+    const saved = sessionStorage.getItem('photobooth.activeReview');
+    return saved ? JSON.parse(saved) : null;
+  } catch (_) {
+    return null;
   }
-
-  return (
-    <div className="kiosk-container" style={{ padding: '2rem' }}>
-      <h1 style={{
-        fontSize: 'clamp(2rem, 5vw, 3.5rem)',
-        marginBottom: '1.5rem',
-        color: '#0f172a'
-      }}>
-        Ảnh của bạn đã sẵn sàng!
-      </h1>
-
-      <div style={{
-        display: 'flex',
-        flexDirection: 'row',
-        gap: '4rem',
-        alignItems: 'center',
-        justifyContent: 'center',
-        width: '100%',
-        height: '72vh'
-      }}>
-
-        {/* Cột trái: ảnh thành phẩm */}
-        <div style={{
-          height: '100%',
-          maxHeight: '650px',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          backgroundColor: 'white',
-          padding: '0.8rem',
-          borderRadius: '1.5rem',
-          boxShadow: '0 20px 50px rgba(0,0,0,0.15)',
-          transform: 'rotate(-1.5deg)'
-        }}>
-          <img
-            src={imageUrl}
-            alt="Thành phẩm"
-            style={{
-              height: '100%',
-              width: 'auto',
-              maxWidth: '45vw',
-              objectFit: 'contain',
-              borderRadius: '0.8rem',
-              display: 'block'
-            }}
-          />
-        </div>
-
-        {/* Cột phải: QR code */}
-        <div style={{
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          backgroundColor: 'rgba(255, 255, 255, 0.7)',
-          backdropFilter: 'blur(20px)',
-          padding: '2.5rem 3rem',
-          borderRadius: '2rem',
-          border: '1px solid rgba(0,0,0,0.05)',
-          boxShadow: '0 10px 30px rgba(0,0,0,0.05)'
-        }}>
-          <p style={{
-            fontSize: '1.4rem',
-            color: '#334155',
-            marginBottom: '2rem',
-            textAlign: 'center',
-            maxWidth: '320px',
-            fontWeight: '600'
-          }}>
-            Dùng camera điện thoại quét mã QR để tải ảnh chất lượng cao
-          </p>
-
-          <div style={{
-            padding: '1.2rem',
-            backgroundColor: 'white',
-            borderRadius: '1.2rem',
-            boxShadow: '0 10px 25px rgba(0,0,0,0.08)'
-          }}>
-            <QRCodeCanvas
-              value={qrValue}
-              size={220}
-              level={"H"}
-              includeMargin={false}
-            />
-          </div>
-
-          {/* Debug: hiển thị URL nhỏ bên dưới QR */}
-          <p style={{
-            fontSize: '0.7rem',
-            color: '#94a3b8',
-            marginTop: '0.8rem',
-            maxWidth: '280px',
-            textAlign: 'center',
-            wordBreak: 'break-all'
-          }}>
-            {qrValue}
-          </p>
-
-          <button
-            className="btn-primary"
-            onClick={() => navigate('/')}
-            style={{
-              marginTop: '2rem',
-              width: '100%',
-              fontSize: '1.6rem',
-              padding: '1rem 2rem'
-            }}
-          >
-            HOÀN TẤT ({timeLeft}s)
-          </button>
-        </div>
-
-      </div>
-    </div>
-  );
 }
 
-export default Review;
+export default function Review() {
+  const { state: routeState } = useLocation();
+  const navigate = useNavigate();
+  const [state] = useState(() => routeState || restoreReviewState());
+  const [settings, setSettings] = useState(state?.settings || {});
+  const [copies, setCopies] = useState(1);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState(state?.printError || '');
+  const [remaining, setRemaining] = useState(state?.settings?.review_timeout || 30);
+  const [imageUrl, setImageUrl] = useState(state?.imageUrl || '');
+  const [imageStatus, setImageStatus] = useState('loading');
+  const actionLock = useRef(false);
+  const imageRetryCount = useRef(0);
+  const imageRetryTimer = useRef(null);
+  const maxCopies = Math.min(10, Math.max(1, Number(settings.max_print_copies || 10)));
+  const wasAutoPrinted = Boolean(state?.printQueued);
+  const canRetake = settings.enable_retake === true && (state?.retakeCount || 0) < 1;
+
+  useEffect(() => {
+    let active = true;
+    request('/settings').then(nextSettings => {
+      if (!active) return;
+      setSettings(nextSettings);
+      setRemaining(nextSettings.review_timeout || 30);
+      setCopies(current => Math.min(current, Math.min(10, Math.max(1, Number(nextSettings.max_print_copies || 10)))));
+    }).catch(() => {});
+    return () => { active = false; };
+  }, []);
+
+  useEffect(() => () => clearTimeout(imageRetryTimer.current), []);
+
+  const handleImageError = () => {
+    if (imageRetryCount.current >= 3) {
+      setImageStatus('error');
+      return;
+    }
+    imageRetryCount.current += 1;
+    imageRetryTimer.current = setTimeout(() => {
+      setImageStatus('loading');
+      setImageUrl(`${state.imageUrl}${state.imageUrl.includes('?') ? '&' : '?'}retry=${Date.now()}`);
+    }, 700);
+  };
+
+  const finish = async () => {
+    if (!state?.sessionId || actionLock.current) return;
+    actionLock.current = true;
+    setBusy(true);
+    setError('');
+    try {
+      if (!wasAutoPrinted) await printSession(state.sessionId, state.template?.print_format || 's4x6', copies);
+      navigate('/download', { replace: true, state: { ...state, settings, printQueued: true } });
+    } catch (printError) {
+      setError(printError.message || 'Không thể gửi lệnh in.');
+      actionLock.current = false;
+      setBusy(false);
+    }
+  };
+  const finishRef = useRef(finish);
+  finishRef.current = finish;
+
+  useEffect(() => {
+    if (busy || error || !state?.sessionId) return undefined;
+    const timer = setInterval(() => setRemaining(value => Math.max(0, value - 1)), 1000);
+    return () => clearInterval(timer);
+  }, [busy, error, state?.sessionId]);
+
+  useEffect(() => {
+    if (remaining === 0 && !error) finishRef.current();
+  }, [error, remaining]);
+
+  const retake = () => {
+    if (actionLock.current) return;
+    actionLock.current = true;
+    navigate('/capture', {
+      replace: true,
+      state: { templateId: state.templateId, template: state.template, retakeCount: (state.retakeCount || 0) + 1 }
+    });
+  };
+
+  if (!state?.imageUrl) return <main className="kiosk-container"><h1>Không tìm thấy phiên chụp</h1><button className="btn-primary touch-btn" onClick={() => navigate('/')}>Về trang chủ</button></main>;
+
+  return <main className="kiosk-container review-screen">
+    <section className="review-layout glass-panel">
+      <div className="review-photo-zone">
+        <div className={`review-photo-frame is-${imageStatus}`}>
+          {imageStatus === 'loading' && <p className="review-photo-loading" role="status">Đang tải ảnh...</p>}
+          {imageStatus === 'error' ? <div className="review-photo-error" role="alert"><p>Ảnh chưa tải kịp. Chạm để tải lại trang.</p><button className="btn-secondary touch-btn" type="button" onClick={() => window.location.reload()}>Tải lại trang</button></div> : <img src={imageUrl} alt="Ảnh vừa ghép" onLoad={() => setImageStatus('loaded')} onError={handleImageError} />}
+        </div>
+      </div>
+      <div className="review-control-zone">
+        <p className="review-eyebrow">Photo booth studio</p>
+        <h1 className="review-title">Ảnh Của Bạn Đã Sẵn Sàng!</h1>
+        <p className="review-description">Kiểm tra lại khoảnh khắc của bạn và chọn số lượng bản in.</p>
+        <div className="review-copy-picker">
+          <span className="review-copy-label">Số lượng bản in</span>
+          <div className="review-copy-controls">
+            <button className="review-copy-step touch-btn" disabled={busy || wasAutoPrinted || copies <= 1} aria-label="Giảm số bản" onClick={() => setCopies(value => value - 1)}>-</button>
+            <output className="review-copy-number">{copies}</output>
+            <span className="review-copy-unit">bản</span>
+            <button className="review-copy-step touch-btn" disabled={busy || wasAutoPrinted || copies >= maxCopies} aria-label="Tăng số bản" onClick={() => setCopies(value => value + 1)}>+</button>
+          </div>
+        </div>
+        {wasAutoPrinted && <p className="review-auto-note" role="status">Ảnh đã được gửi in tự động.</p>}
+        <div className="review-action-row">
+          {canRetake && <button className="btn-secondary touch-btn review-retake" disabled={busy} onClick={retake}>Chụp Lại</button>}
+          <button className="btn-primary touch-btn review-print" disabled={busy} onClick={finish}>{wasAutoPrinted ? 'Tiếp Tục' : 'Tiếp Tục & In Ảnh'}</button>
+        </div>
+        <p className="review-timeout">Tự động tiếp tục sau {remaining} giây.</p>
+        {busy && <p className="review-timeout" role="status">Đang gửi lệnh in...</p>}
+        {error && <p className="review-error" role="alert">{error}</p>}
+      </div>
+    </section>
+  </main>;
+}

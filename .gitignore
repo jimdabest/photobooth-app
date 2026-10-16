@@ -15,6 +15,9 @@ env/
 # Thư mục dữ liệu Photobooth (Không đưa ảnh của khách lên mạng)
 backend/photobooth_data/
 backend/photobooth_prints_all/
+backend/prints/
+backend/settings.json
+ptb_data/
 
 # Hệ điều hành
 .DS_Store

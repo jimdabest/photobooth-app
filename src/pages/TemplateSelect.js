@@ -1,217 +1,79 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import '../App.css';
+import { request } from '../services/kioskApi';
 
-function TemplateSelect() {
+function Arrow({ direction }) {
+  return <svg viewBox="0 0 24 24" aria-hidden="true"><path d={direction === 'left' ? 'M14.5 5 7.5 12l7 7' : 'm9.5 5 7 7-7 7'} fill="none" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round" /></svg>;
+}
+
+export default function TemplateSelect() {
   const navigate = useNavigate();
   const [templates, setTemplates] = useState([]);
-  const [selectedIndex, setSelectedIndex] = useState(0); 
+  const [selectedIndex, setSelectedIndex] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
-
-  // =====================================
-  // STATE ĐỂ NHẬN DIỆN THAO TÁC VUỐT (SWIPE)
-  // =====================================
   const [touchStart, setTouchStart] = useState(null);
   const [touchEnd, setTouchEnd] = useState(null);
 
   useEffect(() => {
-    fetch('http://127.0.0.1:8000/api/templates')
-      .then(res => res.json())
-      .then(data => {
-        // Lọc bỏ các khung đã bị Admin ẩn
-        const visibleTemplates = data.filter(tpl => !tpl.hidden);
-        setTemplates(visibleTemplates);
-        setIsLoading(false);
-      })
-      .catch(err => {
-        console.error("Lỗi:", err);
-        setIsLoading(false);
-      });
+    request('/settings')
+      .then(settings => setTemplates((settings.templates || []).filter(template => !template.hidden)))
+      .catch(error => console.error('Không thể tải danh sách khung:', error))
+      .finally(() => setIsLoading(false));
   }, []);
 
-  const handleNext = () => {
-    if (templates.length > 0) {
-      const selectedTpl = templates[selectedIndex];
-      navigate('/capture', { state: { templateId: selectedTpl.id, template: selectedTpl } });
-    }
+  const selectPrevious = () => setSelectedIndex(index => Math.max(0, index - 1));
+  const selectNext = () => setSelectedIndex(index => Math.min(templates.length - 1, index + 1));
+  const handleSwipeEnd = () => {
+    if (touchStart === null || touchEnd === null) return;
+    if (touchStart - touchEnd > 50) selectNext();
+    if (touchStart - touchEnd < -50) selectPrevious();
+  };
+  const startCapture = () => {
+    const template = templates[selectedIndex];
+    if (template) navigate('/capture', { state: { templateId: template.id, template, retakeCount: 0 } });
   };
 
-  // =====================================
-  // LOGIC ĐIỀU HƯỚNG BĂNG CHUYỀN
-  // =====================================
-  const handlePrevSlide = () => {
-    setSelectedIndex(prev => Math.max(0, prev - 1));
-  };
+  return <main className="kiosk-container template-screen">
+    <header className="template-heading">
+      <h1>CHỌN KHUNG ẢNH</h1>
+      <p>Lướt hoặc bấm nút để xem các mẫu</p>
+    </header>
 
-  const handleNextSlide = () => {
-    setSelectedIndex(prev => Math.min(templates.length - 1, prev + 1));
-  };
-
-  const minSwipeDistance = 50;
-  const onTouchStart = (e) => {
-    setTouchEnd(null);
-    setTouchStart(e.touches[0].clientX);
-  };
-  const onTouchMove = (e) => setTouchEnd(e.touches[0].clientX);
-  const onTouchEndHandler = () => {
-    if (!touchStart || !touchEnd) return;
-    const distance = touchStart - touchEnd;
-    if (distance > minSwipeDistance) handleNextSlide(); 
-    if (distance < -minSwipeDistance) handlePrevSlide(); 
-  };
-
-  return (
-    <div className="kiosk-container" style={{ justifyContent: 'center' }}>
-      
-      <h1 style={{ fontSize: 'clamp(2.5rem, 5vw, 4rem)', marginBottom: '0.5rem', color: '#0f172a', textShadow: '0 2px 10px rgba(255,255,255,0.8)' }}>
-        CHỌN KHUNG ẢNH
-      </h1>
-      <p style={{ fontSize: '1.5rem', color: '#1e293b', marginBottom: '2rem', textShadow: '0 2px 5px rgba(255,255,255,0.8)', fontWeight: 'bold' }}>
-        Lướt hoặc bấm nút để xem các mẫu
-      </p>
-
-      {isLoading ? (
-        <p style={{ fontSize: '2rem', color: '#0f172a', fontWeight: 'bold', background: 'rgba(255,255,255,0.7)', padding: '10px 20px', borderRadius: '10px' }}>Đang tải danh sách khung...</p>
-      ) : templates.length === 0 ? (
-        <p style={{ fontSize: '2rem', color: '#0f172a', fontWeight: 'bold', background: 'rgba(255,255,255,0.7)', padding: '10px 20px', borderRadius: '10px' }}>Hiện chưa có khung ảnh nào.</p>
-      ) : (
-        
-        /* KHU VỰC BĂNG CHUYỀN 3D (CAROUSEL) */
-        <div 
-          style={{ 
-            position: 'relative', 
-            width: '100%', 
-            maxWidth: '1200px',
-            height: '55vh', 
-            display: 'flex', 
-            justifyContent: 'center', 
-            alignItems: 'center', 
-            overflow: 'hidden' 
-          }}
-          onTouchStart={onTouchStart}
-          onTouchMove={onTouchMove}
-          onTouchEnd={onTouchEndHandler}
-        >
-          {/* NÚT MŨI TÊN TRÁI */}
-          <button 
-            onClick={handlePrevSlide} 
-            disabled={selectedIndex === 0}
-            style={{ 
-              position: 'absolute', left: '5%', zIndex: 20, 
-              background: 'rgba(255,255,255,0.9)', border: 'none', borderRadius: '50%', 
-              width: '4rem', height: '4rem', fontSize: '2rem', color: '#0f172a',
-              cursor: selectedIndex === 0 ? 'not-allowed' : 'pointer',
-              boxShadow: '0 4px 15px rgba(0,0,0,0.15)', 
-              opacity: selectedIndex === 0 ? 0.3 : 1,
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              backdropFilter: 'blur(5px)'
-            }}
-          >
-            ❮
-          </button>
-
-          {/* DANH SÁCH KHUNG ẢNH */}
-          {templates.map((tpl, index) => {
+    {isLoading ? <p className="template-message glass-panel">Đang tải danh sách khung...</p> : templates.length === 0 ? <p className="template-message glass-panel">Hiện chưa có khung ảnh nào.</p> : <>
+      <section className="template-carousel" onTouchStart={event => { setTouchEnd(null); setTouchStart(event.touches[0].clientX); }} onTouchMove={event => setTouchEnd(event.touches[0].clientX)} onTouchEnd={handleSwipeEnd}>
+        <button className="template-arrow touch-btn" type="button" onClick={selectPrevious} disabled={selectedIndex === 0} aria-label="Khung trước"><Arrow direction="left" /></button>
+        <div className="template-cards">
+          {templates.map((template, index) => {
             const offset = index - selectedIndex;
-            
-            let translateX = '0%';
-            let scale = 1;
-            let opacity = 1;
-            let zIndex = 10;
-
-            if (offset === 0) {
-              translateX = '0%';
-              scale = 1.05;
-              opacity = 1;
-              zIndex = 10;
-            } else if (offset === -1) {
-              translateX = '-110%'; 
-              scale = 0.75;
-              opacity = 0.7;
-              zIndex = 5;
-            } else if (offset === 1) {
-              translateX = '110%'; 
-              scale = 0.75;
-              opacity = 0.7;
-              zIndex = 5;
-            } else if (offset < -1) {
-              translateX = '-200%';
-              scale = 0.5;
-              opacity = 0;
-              zIndex = 1;
-            } else if (offset > 1) {
-              translateX = '200%';
-              scale = 0.5;
-              opacity = 0;
-              zIndex = 1;
-            }
-
-            return (
-              <div 
-                key={tpl.id}
-                onClick={() => setSelectedIndex(index)} 
-                style={{
-                  position: 'absolute',
-                  height: '85%',
-                  aspectRatio: '2/3',
-                  
-                  backgroundColor: tpl.image_url ? 'rgba(255, 255, 255, 0.85)' : (tpl.color || 'rgba(255,255,255,0.85)'),
-                  backdropFilter: 'blur(8px)',
-                  
-                  backgroundImage: tpl.image_url ? `url(${tpl.image_url})` : 'none',
-                  backgroundSize: 'contain',
-                  backgroundRepeat: 'no-repeat',
-                  backgroundPosition: 'center',
-                  border: offset === 0 ? '8px solid #10b981' : '4px solid rgba(255, 255, 255, 0.6)',
-                  borderRadius: '1.5rem',
-                  boxShadow: offset === 0 ? '0 20px 40px rgba(16, 185, 129, 0.4)' : '0 10px 25px rgba(0,0,0,0.15)',
-                  cursor: 'pointer',
-                  transition: 'all 0.5s cubic-bezier(0.25, 0.8, 0.25, 1)', 
-                  transform: `translateX(${translateX}) scale(${scale})`,
-                  opacity: opacity,
-                  zIndex: zIndex,
-                }}
-              >
-                {/* Dấu tích xanh chỉ hiện ở khung trung tâm */}
-                {offset === 0 && (
-                  <div style={{
-                    position: 'absolute', top: '-1rem', right: '-1rem',
-                    backgroundColor: '#10b981', color: 'white',
-                    width: '3.5rem', height: '3.5rem', borderRadius: '50%',
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    fontWeight: 'bold', fontSize: '1.8rem', boxShadow: '0 4px 10px rgba(0,0,0,0.2)'
-                  }}>✓</div>
-                )}
-              </div>
-            );
+            return <button
+              type="button"
+              key={template.id}
+              className={`template-card ${offset === 0 ? 'is-selected' : ''}`}
+              style={{
+                '--offset': offset,
+                '--scale': offset === 0 ? 1 : Math.abs(offset) === 1 ? 0.76 : 0.56,
+                '--opacity': Math.abs(offset) === 0 ? 1 : Math.abs(offset) === 1 ? 0.58 : 0,
+                '--template-color': template.color || '#ffffff',
+                '--template-image': template.image_url ? `url(${template.image_url})` : 'none',
+                pointerEvents: Math.abs(offset) <= 1 ? 'auto' : 'none',
+                zIndex: offset === 0 ? 3 : Math.abs(offset) === 1 ? 2 : 1
+              }}
+              onClick={() => setSelectedIndex(index)}
+              aria-label={`Chọn khung ${index + 1}`}
+              aria-pressed={offset === 0}
+            >
+              <span className="template-card-art" />
+              {offset === 0 && <span className="template-selected-mark">Đã chọn</span>}
+            </button>;
           })}
-
-          {/* NÚT MŨI TÊN PHẢI */}
-          <button 
-            onClick={handleNextSlide} 
-            disabled={selectedIndex === templates.length - 1}
-            style={{ 
-              position: 'absolute', right: '5%', zIndex: 20, 
-              background: 'rgba(255,255,255,0.9)', border: 'none', borderRadius: '50%', 
-              width: '4rem', height: '4rem', fontSize: '2rem', color: '#0f172a',
-              cursor: selectedIndex === templates.length - 1 ? 'not-allowed' : 'pointer',
-              boxShadow: '0 4px 15px rgba(0,0,0,0.15)', 
-              opacity: selectedIndex === templates.length - 1 ? 0.3 : 1,
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              backdropFilter: 'blur(5px)'
-            }}
-          >
-            ❯
-          </button>
         </div>
-      )}
-
-      <div style={{ marginTop: '3rem', display: 'flex', gap: '2rem' }}>
-        <button className="btn-secondary" style={{ backdropFilter: 'blur(5px)', background: 'rgba(241, 245, 249, 0.9)' }} onClick={() => navigate('/')}>QUAY LẠI</button>
-        <button className="btn-primary" onClick={handleNext} disabled={templates.length === 0}>TIẾP TỤC</button>
-      </div>
-    </div>
-  );
+        <button className="template-arrow touch-btn" type="button" onClick={selectNext} disabled={selectedIndex === templates.length - 1} aria-label="Khung tiếp theo"><Arrow direction="right" /></button>
+      </section>
+      <nav className="template-actions">
+        <button className="btn-secondary touch-btn template-back" type="button" onClick={() => navigate('/')}>QUAY LẠI</button>
+        <button className="btn-primary touch-btn template-continue" type="button" onClick={startCapture}>TIẾP TỤC</button>
+      </nav>
+    </>}
+  </main>;
 }
-
-export default TemplateSelect;
