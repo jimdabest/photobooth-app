@@ -1,6 +1,7 @@
 {
   "name": "photobooth-app",
   "version": "0.1.0",
+  "homepage": ".",
   "main": "public/electron.js",
   "private": true,
   "scripts": {
