@@ -10,7 +10,11 @@ from dotenv import load_dotenv
 # config.py nằm trong backend/app, vì vậy BASE_DIR là backend và PROJECT_DIR là gốc dự án.
 BASE_DIR = Path(__file__).resolve().parent.parent
 PROJECT_DIR = BASE_DIR.parent
-load_dotenv(dotenv_path=BASE_DIR / ".env")
+# The desktop launcher provides a per-user file in AppData. Keep the local
+# backend/.env fallback for source-based development and service deployments.
+_configured_env_file = os.getenv("PHOTOBOOTH_ENV_FILE", "").strip()
+ENV_FILE = Path(_configured_env_file) if _configured_env_file else BASE_DIR / ".env"
+load_dotenv(dotenv_path=ENV_FILE)
 
 # All runtime data lives beneath one project-level directory unless an
 # operator explicitly configures another location.

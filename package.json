@@ -68,6 +68,10 @@
         "from": "backend/bundle/photobooth-backend",
         "to": "backend",
         "filter": ["**/*"]
+      },
+      {
+        "from": "backend/.env.example",
+        "to": "backend/.env.example"
       }
     ],
     "win": {

@@ -1,5 +1,6 @@
 const { app, BrowserWindow, dialog, ipcMain, screen } = require('electron');
 const { spawn } = require('child_process');
+const fs = require('fs');
 const http = require('http');
 const path = require('path');
 const { pathToFileURL } = require('url');
@@ -18,6 +19,18 @@ function backendDirectory() {
   return isDevelopment()
     ? path.join(__dirname, '..', 'backend')
     : path.join(process.resourcesPath, 'backend');
+}
+
+function runtimeEnvFile() {
+  const envFile = path.join(app.getPath('userData'), '.env');
+  if (!fs.existsSync(envFile)) {
+    fs.mkdirSync(path.dirname(envFile), { recursive: true });
+    const template = path.join(backendDirectory(), '.env.example');
+    if (fs.existsSync(template)) {
+      fs.copyFileSync(template, envFile);
+    }
+  }
+  return envFile;
 }
 
 function isBackendReady() {
@@ -59,6 +72,7 @@ async function startBackend() {
     env: {
       ...process.env,
       PTB_DATA_DIR: path.join(app.getPath('userData'), 'ptb_data'),
+      PHOTOBOOTH_ENV_FILE: runtimeEnvFile(),
       PYTHONUTF8: '1'
     }
   });

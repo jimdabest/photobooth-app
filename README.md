@@ -51,6 +51,20 @@ Ba lớp chính:
 
 ## Cài đặt
 
+### Cài bản Windows đóng gói
+
+Chạy `Simplex Photobooth-<version>-Setup.exe` trong thư mục `dist/`. Sau lần
+mở đầu tiên, app tạo file cấu hình tại:
+
+```text
+%APPDATA%\Simplex Photobooth\.env
+```
+
+Mở file này bằng Notepad và điền `R2_ENABLED=true`, `R2_ACCOUNT_ID`,
+`R2_ACCESS_KEY`, `R2_SECRET_KEY`, `R2_BUCKET_NAME`, `R2_PUBLIC_URL` và
+`PUBLIC_URL`. Lưu file rồi đóng/mở lại app để áp dụng. File này chỉ nằm trên
+máy kiosk, không được đưa vào Git hoặc installer.
+
 ### 1. Clone và cài Canon EDSDK
 
 ```powershell
