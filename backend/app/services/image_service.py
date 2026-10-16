@@ -292,7 +292,10 @@ def finalize_session(session_id: str) -> dict[str, object]:
                 "pose_count": len(web_poses),
             }
         except Exception as exc:
-            print(f"[FINALIZE] Upload R2 thất bại, đưa vào queue: {exc}")
+            # GitHub's Windows runner uses cp1252 by default, so keep this
+            # operational log ASCII-only instead of turning an R2 fallback
+            # into an unrelated UnicodeEncodeError.
+            print(f"[FINALIZE] R2 upload failed; moving item to offline queue: {exc}")
             queued_image = _queue_web_images(session_id, web_image, web_poses)
             _cleanup_session_raw_files(session_id, settings)
             return {
