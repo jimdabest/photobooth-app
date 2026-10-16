@@ -18,6 +18,9 @@ backend/photobooth_data/
 backend/photobooth_prints_all/
 backend/prints/
 backend/settings.json
+backend/bundle/
+backend/.pyinstaller-work/
+backend/.pyinstaller-spec/
 ptb_data/
 
 # Hệ điều hành

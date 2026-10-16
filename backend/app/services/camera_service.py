@@ -3,6 +3,7 @@ import time
 import ctypes
 from ctypes import wintypes
 import os
+import sys
 from pathlib import Path
 from PIL import Image
 
@@ -10,7 +11,12 @@ from PIL import Image
 # backend/, còn vị trí gốc dự án được giữ làm phương án tương thích cũ.
 _backend_dir = Path(__file__).resolve().parents[2]
 _project_dir = _backend_dir.parent
-_edsdk_candidates = (_backend_dir / "EDSDK.dll", _project_dir / "EDSDK.dll")
+_frozen_dir = Path(sys.executable).resolve().parent if getattr(sys, "frozen", False) else None
+_edsdk_candidates = tuple(path for path in (
+    _frozen_dir / "EDSDK.dll" if _frozen_dir else None,
+    _backend_dir / "EDSDK.dll",
+    _project_dir / "EDSDK.dll",
+) if path is not None)
 dll_path = next((path for path in _edsdk_candidates if path.is_file()), None)
 if dll_path is not None:
     edsdk = ctypes.WinDLL(str(dll_path))

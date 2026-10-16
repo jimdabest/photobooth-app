@@ -1,9 +1,81 @@
-const { app, BrowserWindow, ipcMain, screen } = require('electron');
+const { app, BrowserWindow, dialog, ipcMain, screen } = require('electron');
+const { spawn } = require('child_process');
+const http = require('http');
 const path = require('path');
-const isDev = require('electron-is-dev');
+const { pathToFileURL } = require('url');
 
 let mainWindow;
 let isToggling = false;
+let backendProcess;
+
+const API_ORIGIN = 'http://127.0.0.1:8000';
+
+function isDevelopment() {
+  return !app.isPackaged;
+}
+
+function backendDirectory() {
+  return isDevelopment()
+    ? path.join(__dirname, '..', 'backend')
+    : path.join(process.resourcesPath, 'backend');
+}
+
+function isBackendReady() {
+  return new Promise((resolve) => {
+    const request = http.get(`${API_ORIGIN}/api/settings`, (response) => {
+      response.resume();
+      resolve(response.statusCode >= 200 && response.statusCode < 500);
+    });
+    request.setTimeout(500, () => {
+      request.destroy();
+      resolve(false);
+    });
+    request.on('error', () => resolve(false));
+  });
+}
+
+async function waitForBackend() {
+  const deadline = Date.now() + 20_000;
+  while (Date.now() < deadline) {
+    if (await isBackendReady()) return;
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+  throw new Error('Backend không phản hồi trên cổng 8000 sau 20 giây.');
+}
+
+async function startBackend() {
+  // Let operators keep an already-running production backend on port 8000.
+  if (await isBackendReady()) return;
+
+  const backendDir = backendDirectory();
+  const command = isDevelopment()
+    ? path.join(backendDir, 'venv', 'Scripts', 'python.exe')
+    : path.join(backendDir, 'photobooth-backend.exe');
+  const arguments_ = isDevelopment() ? [path.join(backendDir, 'run.py')] : [];
+
+  backendProcess = spawn(command, arguments_, {
+    cwd: backendDir,
+    windowsHide: true,
+    env: {
+      ...process.env,
+      PTB_DATA_DIR: path.join(app.getPath('userData'), 'ptb_data'),
+      PYTHONUTF8: '1'
+    }
+  });
+  backendProcess.stdout.on('data', (data) => console.log(`[backend] ${data}`));
+  backendProcess.stderr.on('data', (data) => console.error(`[backend] ${data}`));
+  backendProcess.on('error', (error) => console.error('Không thể khởi động backend:', error));
+  backendProcess.on('exit', (code) => {
+    backendProcess = undefined;
+    if (code && !app.isQuitting) console.error(`Backend đã dừng với mã ${code}.`);
+  });
+
+  await waitForBackend();
+}
+
+function stopBackend() {
+  if (backendProcess && !backendProcess.killed) backendProcess.kill();
+}
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -19,9 +91,9 @@ function createWindow() {
   });
 
   mainWindow.loadURL(
-    isDev
+    isDevelopment()
       ? 'http://localhost:3000'
-      : `file://${path.join(__dirname, '../build/index.html')}`
+      : pathToFileURL(path.join(__dirname, '../build/index.html')).toString()
   );
 
   // Đồng bộ state khi cửa sổ vào/ra fullscreen
@@ -69,7 +141,15 @@ function createWindow() {
   mainWindow.on('closed', () => mainWindow = null);
 }
 
-app.on('ready', createWindow);
+app.whenReady().then(async () => {
+  try {
+    await startBackend();
+    createWindow();
+  } catch (error) {
+    dialog.showErrorBox('Không thể khởi động Photobooth', error.message);
+    app.quit();
+  }
+});
 
 // Toggle fullscreen và windowed
 ipcMain.on('app:toggle-window', (event) => {
@@ -128,4 +208,9 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
     app.quit();
   }
+});
+
+app.on('before-quit', () => {
+  app.isQuitting = true;
+  stopBackend();
 });
