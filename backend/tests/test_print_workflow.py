@@ -54,6 +54,7 @@ class CentralizedFileWorkflowTests(unittest.TestCase):
         settings = settings_service.load_settings()
         self.assertEqual(settings["printer_model"], "RX1HS")
         self.assertTrue(settings["enable_review_page"])
+        self.assertTrue(settings["print_qr_on_photo"])
         self.assertFalse(settings["save_session_raw_images"])
         self.assertEqual(settings["max_print_copies"], 10)
         self.assertTrue(settings["enable_retake"])
@@ -225,6 +226,65 @@ class CentralizedFileWorkflowTests(unittest.TestCase):
         ])
         self.assertFalse(queued.exists())
         self.assertFalse((self.offline_queue / f"{session_id}_pose_1.jpg").exists())
+
+    def test_offline_composition_includes_qr_when_print_qr_on_photo_is_true(self):
+        session_id = "session-offline-qr"
+        raw_dir = self.session_dir / session_id
+        raw_dir.mkdir()
+        raw = raw_dir / "pose_1.jpg"
+        Image.new("RGB", (1200, 1800), "white").save(raw)
+        self._save_settings(
+            offline_mode=True,
+            print_qr_on_photo=True,
+            templates=[{
+                "id": "tpl_offline_qr",
+                "name": "Khung",
+                "print_format": "s4x6",
+                "canvas_size": {"width": 1200, "height": 1800},
+                "slots": [{"x": 0, "y": 0, "width": 1200, "height": 1800}],
+                "qr_config": {"print_on_photo": True, "size": 150, "x": 100, "y": 100},
+            }],
+        )
+
+        final_path = image_service.process_and_save_strip(session_id, [str(raw)], "tpl_offline_qr")
+        self.assertTrue(final_path.is_file())
+
+        with Image.open(final_path) as composed:
+            qr_crop = composed.crop((100, 100, 250, 250))
+            extrema = qr_crop.convert("L").getextrema()
+            self.assertEqual(extrema[0], 0)
+
+        result = image_service.finalize_session(session_id)
+        queued = self.offline_queue / f"{session_id}.jpg"
+        self.assertEqual(Path(result["queue_file"]), queued)
+        self.assertTrue(queued.is_file())
+
+    def test_composition_omits_qr_when_print_qr_on_photo_is_false(self):
+        session_id = "session-no-qr"
+        raw_dir = self.session_dir / session_id
+        raw_dir.mkdir()
+        raw = raw_dir / "pose_1.jpg"
+        Image.new("RGB", (1200, 1800), "white").save(raw)
+        self._save_settings(
+            offline_mode=False,
+            print_qr_on_photo=False,
+            templates=[{
+                "id": "tpl_no_qr",
+                "name": "Khung",
+                "print_format": "s4x6",
+                "canvas_size": {"width": 1200, "height": 1800},
+                "slots": [{"x": 0, "y": 0, "width": 1200, "height": 1800}],
+                "qr_config": {"print_on_photo": True, "size": 150, "x": 100, "y": 100},
+            }],
+        )
+
+        final_path = image_service.process_and_save_strip(session_id, [str(raw)], "tpl_no_qr")
+        self.assertTrue(final_path.is_file())
+
+        with Image.open(final_path) as composed:
+            qr_crop = composed.crop((100, 100, 250, 250))
+            extrema = qr_crop.convert("L").getextrema()
+            self.assertEqual(extrema[0], 255)
 
 
 if __name__ == "__main__":

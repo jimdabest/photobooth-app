@@ -22,6 +22,8 @@ DEFAULT_SETTINGS = {
     "printer_model": "RX1HS",
     "enable_review_page": True,
     "offline_mode": False,
+    "print_qr_on_photo": True,
+    "manual_capture": False,
     "auto_print": False,
     "enable_retake": True,
     "hot_folder_dir": DEFAULT_HOT_FOLDER_DIR,
@@ -56,7 +58,7 @@ def _normalise_template(template: Any) -> dict[str, Any]:
 
 def _normalise(settings: dict[str, Any]) -> dict[str, Any]:
     result = {**DEFAULT_SETTINGS, **settings}
-    for key in ("enable_review_page", "offline_mode", "auto_print", "enable_retake", "save_session_raw_images"):
+    for key in ("enable_review_page", "offline_mode", "print_qr_on_photo", "manual_capture", "auto_print", "enable_retake", "save_session_raw_images"):
         if type(result[key]) is not bool:
             raise ValueError(f"{key} phải là boolean")
 

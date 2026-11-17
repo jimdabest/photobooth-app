@@ -14,6 +14,7 @@ from slowapi.util import get_remote_address
 from app.config import BASE_DATA_DIR, FINAL_IMAGES_DIR, SESSION_DIR
 from app.services.camera_provider import canon_cam, capture_raw_photo, pre_focus_camera
 from app.services.image_service import (
+    cancel_session,
     final_image_path,
     finalize_session as finalize_session_service,
     get_session_url,
@@ -54,6 +55,8 @@ class CaptureRequest(BaseModel):
     session_id: str = Field(min_length=1, max_length=120, pattern=r"^[A-Za-z0-9_-]+$")
     template_id: str = Field(min_length=1, max_length=120, pattern=r"^[A-Za-z0-9_-]+$")
     pose_number: int = Field(ge=1, le=20)
+    is_retake: bool = False
+    is_last_in_retake: bool = False
 
 
 class SettingsUpdate(BaseModel):
@@ -61,6 +64,8 @@ class SettingsUpdate(BaseModel):
     model_config = ConfigDict(extra="allow")
 
     offline_mode: bool | None = None
+    print_qr_on_photo: bool | None = None
+    manual_capture: bool | None = None
     auto_print: bool | None = None
     max_print_copies: int | None = Field(default=None, ge=1, le=10)
     enable_retake: bool | None = None
@@ -111,16 +116,20 @@ def capture_pose(request: Request, payload: CaptureRequest, background_tasks: Ba
 
     session_dir = SESSION_DIR / payload.session_id
     session_dir.mkdir(parents=True, exist_ok=True)
-    if payload.pose_number > 1 and not (session_dir / f"pose_{payload.pose_number - 1}.jpg").is_file():
+    if not payload.is_retake and payload.pose_number > 1 and not (session_dir / f"pose_{payload.pose_number - 1}.jpg").is_file():
         raise HTTPException(status_code=409, detail="Cần chụp pose trước trước khi tiếp tục")
 
+    if payload.is_retake:
+        completed = payload.is_last_in_retake
+    else:
+        completed = payload.pose_number == total_poses
+    canon_cam.reopen_live_view = not completed
     try:
         pre_focus_camera()
         photo_path = capture_raw_photo(str(session_dir), payload.pose_number)
     except Exception as exc:
         raise HTTPException(status_code=503, detail="Không thể chụp ảnh từ máy ảnh") from exc
 
-    completed = payload.pose_number == total_poses
     settings = load_settings()
     response = {
         "session_id": payload.session_id,
@@ -131,6 +140,8 @@ def capture_pose(request: Request, payload: CaptureRequest, background_tasks: Ba
     }
     if not completed:
         return response
+
+    canon_cam.stop_live_view_thread()
 
     raw_photos = [session_dir / f"pose_{pose}.jpg" for pose in range(1, total_poses + 1)]
     if not all(path.is_file() for path in raw_photos):
@@ -155,11 +166,18 @@ def capture_pose(request: Request, payload: CaptureRequest, background_tasks: Ba
         except (OSError, ValueError, FileNotFoundError) as exc:
             print_error = str(exc)
 
-    background_tasks.add_task(finalize_session_service, payload.session_id)
+    if settings["auto_print"] or not settings["enable_review_page"]:
+        background_tasks.add_task(finalize_session_service, payload.session_id)
+
+    pose_urls = [
+        f"/data/session/{payload.session_id}/pose_{i}.jpg"
+        for i in range(1, total_poses + 1)
+    ]
     response.update({
         "image_url": f"/data/final_images/{final_path.name}",
         "session_url": get_session_url(payload.session_id),
         "settings": settings,
+        "poses": pose_urls,
         "print_queued": print_queued,
         "print_error": print_error,
     })
@@ -201,13 +219,14 @@ def delete_template(template_id: str):
 
 
 @router.post("/print")
-def print_image(payload: PrintRequest):
+def print_image(payload: PrintRequest, background_tasks: BackgroundTasks):
     image_value = payload.image_path or payload.image_name_or_path
     if not image_value:
         raise HTTPException(status_code=422, detail="Thiếu image_path")
     session_id = _session_id_from_print_value(image_value)
     try:
         files = send_to_hot_folder(session_id, payload.print_format, payload.copies)
+        background_tasks.add_task(finalize_session_service, session_id)
         return {"status": "queued", "copies": len(files), "files": files, "print_format": payload.print_format}
     except (OSError, ValueError, FileNotFoundError) as exc:
         raise HTTPException(status_code=500, detail=f"Không thể gửi lệnh in: {exc}") from exc
@@ -262,7 +281,7 @@ def video_stream():
     canon_cam.start_live_view_thread()
 
     def generate_frames():
-        while True:
+        while getattr(canon_cam, "is_live_view_active", True):
             frame = canon_cam.latest_frame
             if frame:
                 yield b"--frame\r\nContent-Type: image/jpeg\r\n\r\n" + frame + b"\r\n"
@@ -281,4 +300,16 @@ def get_session_info(session_id: str):
             "cloud_url": "",
             "has_cloud": False,
         }
+
+
+@router.post("/sessions/{session_id}/cancel")
+def cancel_session_endpoint(session_id: str):
+    try:
+        canon_cam.stop_live_view_thread()
+        cancel_session(session_id)
+        return {"status": "cancelled", "session_id": session_id}
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail="Không thể hủy phiên chụp") from exc
     raise HTTPException(status_code=404, detail="Không tìm thấy session")

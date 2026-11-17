@@ -82,6 +82,8 @@ class CanonCamera:
         self._callback_ref = ObjectEventHandlerType(self.object_event_handler)
         self.latest_frame = None
         self.is_running = True
+        self.is_live_view_active = False
+        self.reopen_live_view = True
         self.action_queue = None
         self.action_done_event = threading.Event()
         self.capture_success = False
@@ -153,6 +155,7 @@ class CanonCamera:
                         device = ctypes.c_uint32(3)
                         edsdk.EdsSetPropertyData(self.camera, 0x00000500, 0, 4, ctypes.byref(device))
                         live_view_on = True
+                    self.is_live_view_active = True
                     self.action_queue = None
 
                 elif self.action_queue == "PRE_FOCUS":
@@ -170,6 +173,7 @@ class CanonCamera:
                         evf_mode_off = ctypes.c_uint32(0)
                         edsdk.EdsSetPropertyData(self.camera, 0x00000501, 0, 4, ctypes.byref(evf_mode_off))
                     live_view_on = False
+                    self.is_live_view_active = False
                     self.latest_frame = None
                     self.action_queue = None
 
@@ -198,14 +202,24 @@ class CanonCamera:
                             if err_full in (0x61, 0x8D07, 0x8D04):
                                 self.camera = None
 
-                        # Chụp xong bật lại Live View
-                        evf_mode_on = ctypes.c_uint32(1)
-                        edsdk.EdsSetPropertyData(self.camera, 0x00000501, 0, 4, ctypes.byref(evf_mode_on))
-                        device = ctypes.c_uint32(3)
-                        edsdk.EdsSetPropertyData(self.camera, 0x00000500, 0, 4, ctypes.byref(device))
-                        live_view_on = True
+                        # Chụp xong chỉ bật lại Live View nếu phiên chụp chưa kết thúc
+                        if getattr(self, "reopen_live_view", True):
+                            evf_mode_on = ctypes.c_uint32(1)
+                            edsdk.EdsSetPropertyData(self.camera, 0x00000501, 0, 4, ctypes.byref(evf_mode_on))
+                            device = ctypes.c_uint32(3)
+                            edsdk.EdsSetPropertyData(self.camera, 0x00000500, 0, 4, ctypes.byref(device))
+                            live_view_on = True
+                            self.is_live_view_active = True
+                        else:
+                            live_view_on = False
+                            self.is_live_view_active = False
+                            self.latest_frame = None
                     else:
                         self.capture_success = False
+                        if not getattr(self, "reopen_live_view", True):
+                            live_view_on = False
+                            self.is_live_view_active = False
+                            self.latest_frame = None
 
                     self.action_queue = None
                     self.action_done_event.set()
@@ -265,10 +279,14 @@ class CanonCamera:
         return 0
 
     def start_live_view_thread(self):
+        self.is_live_view_active = True
+        self.reopen_live_view = True
         self.action_queue = "START_LIVE_VIEW"
 
     def stop_live_view_thread(self):
+        self.is_live_view_active = False
         self.action_queue = "STOP_LIVE_VIEW"
+        self.latest_frame = None
 
     def pre_focus(self):
         if self.camera:

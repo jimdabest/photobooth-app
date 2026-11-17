@@ -11,6 +11,8 @@ const Admin = () => {
         enable_retake: true,
         enable_review_page: true,
         offline_mode: false,
+        print_qr_on_photo: true,
+        manual_capture: false,
         save_session_raw_images: false,
         printer_model: 'RX1HS',
         templates: [],
@@ -562,7 +564,14 @@ const Admin = () => {
                                         onChange={event => setSettings(current => ({ ...current, hot_folder_dir: event.target.value }))}
                                         placeholder="ptb_data/hot_folder"
                                         style={{ width: '100%', boxSizing: 'border-box', padding: 10, margin: '8px 0' }} />
-                                    {[['enable_review_page', 'Bật màn hình xem lại'], ['offline_mode', 'Chụp Offline (Không tạo QR)'], ['enable_retake', 'Cho phép chụp lại (Retake)'], ['save_session_raw_images', 'Lưu ảnh gốc của phiên chụp']].map(([key, label]) => (
+                                    {[
+                                        ['enable_review_page', 'Bật màn hình xem lại'],
+                                        ['offline_mode', 'Chụp Offline'],
+                                        ['print_qr_on_photo', 'In mã QR lên ảnh'],
+                                        ['manual_capture', 'Chụp thủ công (Bấm nút mới đếm ngược)'],
+                                        ['enable_retake', 'Cho phép chụp lại (Retake)'],
+                                        ['save_session_raw_images', 'Lưu ảnh gốc của phiên chụp'],
+                                    ].map(([key, label]) => (
                                         <label key={key} style={{ display: 'block', marginTop: 16 }}>
                                             <input type="checkbox" checked={Boolean(settings[key])} onChange={event => updateSetting(key, event.target.checked)} /> {label}
                                         </label>

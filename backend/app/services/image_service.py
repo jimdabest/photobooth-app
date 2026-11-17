@@ -349,7 +349,7 @@ def process_and_save_strip(session_id: str, raw_photo_paths: list[str], template
             composed.paste(overlay, (0, 0), overlay)
 
     qr_config = template.get("qr_config", {})
-    if not settings["offline_mode"] and qr_config.get("print_on_photo", True):
+    if settings.get("print_qr_on_photo", True) and qr_config.get("print_on_photo", True):
         qr_size = int(qr_config.get("size", 150))
         qr = qrcode.QRCode(version=1, box_size=10, border=1)
         qr.add_data(get_session_url(session_id))
@@ -371,3 +371,39 @@ def process_and_save_strip(session_id: str, raw_photo_paths: list[str], template
         temporary_final_path.unlink(missing_ok=True)
 
     return final_path
+
+
+def cancel_session(session_id: str) -> None:
+    """Clean up all artifacts of a cancelled session so it is not printed and not saved."""
+    if not _SAFE_SEGMENT.fullmatch(session_id):
+        raise ValueError("session_id không hợp lệ")
+
+    # 1. Xóa thư mục session raw
+    session_dir = SESSION_DIR / session_id
+    if session_dir.is_dir():
+        shutil.rmtree(session_dir, ignore_errors=True)
+
+    # 2. Xóa ảnh ghép thành phẩm
+    final_path = FINAL_IMAGES_DIR / f"{session_id}.jpg"
+    final_path.unlink(missing_ok=True)
+
+    # 3. Xóa các file trong offline queue nếu có
+    if OFFLINE_QUEUE_DIR.is_dir():
+        for item in OFFLINE_QUEUE_DIR.glob(f"{session_id}*"):
+            try:
+                item.unlink(missing_ok=True)
+            except OSError:
+                pass
+
+    # 4. Xóa trên R2 nếu đã upload
+    client = _get_s3_client()
+    if client and R2_BUCKET_NAME:
+        try:
+            prefix = cloud_prefix(session_id)
+            response = client.list_objects_v2(Bucket=R2_BUCKET_NAME, Prefix=prefix)
+            contents = response.get("Contents", [])
+            if contents:
+                delete_keys = [{"Key": obj["Key"]} for obj in contents]
+                client.delete_objects(Bucket=R2_BUCKET_NAME, Delete={"Objects": delete_keys})
+        except Exception as exc:
+            print(f"[R2] Không thể xóa session {session_id} trên R2: {exc}")

@@ -18,9 +18,15 @@ export function printSession(imagePath, printFormat, copies = 1) {
   });
 }
 
-export function capturePose(sessionId, templateId, poseNumber) {
+export function capturePose(sessionId, templateId, poseNumber, options = {}) {
   return request('/capture', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ session_id: sessionId, template_id: templateId, pose_number: poseNumber })
+    body: JSON.stringify({
+      session_id: sessionId,
+      template_id: templateId,
+      pose_number: poseNumber,
+      is_retake: options.isRetake || false,
+      is_last_in_retake: options.isLastInRetake || false
+    })
   });
 }

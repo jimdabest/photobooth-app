@@ -21,6 +21,7 @@ class MockCamera:
         self._preview = threading.Event()
         self._lock = threading.Lock()
         self._worker = None
+        self.reopen_live_view = True
 
     @staticmethod
     def _synthetic_frame(pose=0, size=(1280, 720)):
@@ -37,9 +38,16 @@ class MockCamera:
         image.save(buffer, 'JPEG', quality=90)
         return buffer.getvalue()
 
+    @property
+    def is_live_view_active(self):
+        return self._preview.is_set()
+
     def start_live_view_thread(self):
         with self._lock:
             self._preview.set()
+            self.reopen_live_view = True
+            if self.latest_frame is None:
+                self.latest_frame = self._webcam_frame or self._synthetic_frame()
             if self._worker is None or not self._worker.is_alive():
                 self._stop.clear()
                 self._worker = threading.Thread(target=self._run, daemon=True, name='mock-camera')
@@ -47,6 +55,7 @@ class MockCamera:
 
     def stop_live_view_thread(self):
         self._preview.clear()
+        self.latest_frame = None
 
     def _run(self):
         cap = None
